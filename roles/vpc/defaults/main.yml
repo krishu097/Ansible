@@ -3,12 +3,12 @@ vpc_cidr: "10.0.0.0/16"
 
 vpc_public_subnets:
   - cidr: "10.0.1.0/24"
-    az: "us-east-1a"
+    az: "us-east-2a"
   - cidr: "10.0.2.0/24"
-    az: "us-east-1b"
+    az: "us-east-2b"
 
 vpc_private_subnets:
   - cidr: "10.0.10.0/24"
-    az: "us-east-1a"
+    az: "us-east-2a"
   - cidr: "10.0.20.0/24"
-    az: "us-east-1b"
+    az: "us-east-2b"
