@@ -31,5 +31,5 @@
       Name: "subnet-{{ environment }}-public-{{ loop.index }}"
       Environment: "{{ environment }}"
       Type: "public"
-  loop: "{{ public_subnets }}"
+  loop: "{{  vpc_public_subnets }}"
   register: public_subnets_result
