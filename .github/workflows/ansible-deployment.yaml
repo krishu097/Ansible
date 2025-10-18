@@ -16,9 +16,12 @@ on:
           - deploy
           - destroy
 
+permissions:
+  id-token: write
+  contents: read
+
 env:
   PYTHON_VERSION: "3.12"
-  AWS_REGION: ${{vars.AWS_REGION}}
 
 jobs:
   ansible-lint:
@@ -75,7 +78,7 @@ jobs:
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_DEPLOYMENT_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
+          aws-region: ${{ vars.AWS_REGION }}
           role-session-name: GitHubActions-Ansible
 
       - name: Set up Python
@@ -94,7 +97,7 @@ jobs:
         run: |
           ansible-playbook site.yml \
             -e "environment=${{ inputs.environment }}" \
-            -e "aws_region=${{ env.AWS_REGION }}" \
+            -e "aws_region=${{ vars.AWS_REGION }}" \
             -e "git_commit=${{ github.sha }}" \
             -e "git_branch=main"
 
@@ -103,11 +106,11 @@ jobs:
         run: |
           ansible-playbook cleanup.yml \
             -e "environment=${{ inputs.environment }}" \
-            -e "aws_region=${{ env.AWS_REGION }}"
+            -e "aws_region=${{ vars.AWS_REGION }}"
 
       - name: Run Tests
         if: inputs.action == 'deploy'
         run: |
           ansible-playbook tests.yml \
             -e "environment=${{ inputs.environment }}" \
-            -e "aws_region=${{ env.AWS_REGION }}"
+            -e "aws_region=${{ vars.AWS_REGION }}"
