@@ -1,0 +1,11 @@
+---
+- name: Deploy AWS Infrastructure
+  hosts: localhost
+  gather_facts: false
+  collections:
+    - amazon.aws
+    - community.aws
+
+  roles:
+    - role: vpc
+      tags: vpc

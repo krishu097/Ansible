@@ -1,0 +1,35 @@
+---
+- name: Create VPC
+  amazon.aws.ec2_vpc_net:
+    name: "vpc-{{ environment }}"
+    cidr_block: "{{ vpc_cidr }}"
+    region: "{{ aws_region }}"
+    tags:
+      Environment: "{{ environment }}"
+      Project: "ansible-cicd"
+      GitCommit: "{{ git_commit | default('unknown') }}"
+      ManagedBy: "ansible"
+  register: vpc_result
+
+- name: Create Internet Gateway
+  community.aws.ec2_vpc_igw:
+    vpc_id: "{{ vpc_result.vpc.id }}"
+    state: present
+    tags:
+      Name: "igw-{{ environment }}"
+      Environment: "{{ environment }}"
+  register: igw_result
+
+- name: Create Public Subnets
+  amazon.aws.ec2_vpc_subnet:
+    vpc_id: "{{ vpc_result.vpc.id }}"
+    cidr: "{{ item.cidr }}"
+    az: "{{ item.az }}"
+    region: "{{ aws_region }}"
+    map_public: true
+    tags:
+      Name: "subnet-{{ environment }}-public-{{ loop.index }}"
+      Environment: "{{ environment }}"
+      Type: "public"
+  loop: "{{ public_subnets }}"
+  register: public_subnets_result

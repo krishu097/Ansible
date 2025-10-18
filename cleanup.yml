@@ -1,0 +1,13 @@
+---
+- name: Cleanup AWS Infrastructure
+  hosts: localhost
+  gather_facts: false
+  collections:
+    - amazon.aws
+    - community.aws
+
+  tasks:
+    - name: Include cleanup tasks
+      include_role:
+        name: vpc
+        tasks_from: cleanup.yml
