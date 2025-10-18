@@ -28,8 +28,8 @@
     region: "{{ aws_region }}"
     map_public: true
     tags:
-      Name: "subnet-{{ environment }}-public-{{ loop.index }}"
+      Name: "subnet-{{ environment }}-public-{{ item.az }}"
       Environment: "{{ environment }}"
       Type: "public"
-  loop: "{{  vpc_public_subnets }}"
+  loop: "{{ vpc_public_subnets }}"
   register: public_subnets_result
