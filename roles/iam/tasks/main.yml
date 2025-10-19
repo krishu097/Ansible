@@ -6,7 +6,7 @@
     assume_role_policy_document: "{{ eks_cluster_trust_policy | to_json }}"
     managed_policies: "{{ eks_cluster_managed_policies }}"
     tags:
-      Environment: "{{ environment }}"
+      Environment: "{{ environment | regex_replace('[^a-zA-Z0-9_.:/=+\\-@ ]', '') }}"
   register: eks_cluster_role
 
 - name: Create EKS Node Group Role
@@ -16,7 +16,7 @@
     assume_role_policy_document: "{{ eks_nodegroup_trust_policy | to_json }}"
     managed_policies: "{{ eks_nodegroup_managed_policies }}"
     tags:
-      Environment: "{{ environment }}"
+      Environment: "{{ environment | regex_replace('[^a-zA-Z0-9_.:/=+\\-@ ]', '') }}"
   register: eks_nodegroup_role
 
 - name: Create ECR Access Policy
@@ -25,7 +25,7 @@
     description: "ECR access for EKS workloads"
     policy_document: "{{ ecr_policy_document | to_json }}"
     tags:
-      Environment: "{{ environment }}"
+      Environment: "{{ environment | regex_replace('[^a-zA-Z0-9_.:/=+\\-@ ]', '') }}"
   register: ecr_policy
 
 - name: Attach ECR Policy to Node Group Role
