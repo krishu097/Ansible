@@ -71,15 +71,40 @@
   register: private_route_table
   when: create_nat_gateway | default(true)
 
+- name: Create Single NAT Gateway in first public subnet
+  amazon.aws.ec2_vpc_nat_gateway:
+    state: present
+    subnet_id: "{{ public_subnets_result.results[0].subnet.id }}" # ← Only in first AZ
+    wait: true
+    wait_timeout: 600
+    region: "{{ aws_region }}"
+    tags:
+      Name: "nat-{{ environment }}"
+      Environment: "{{ environment }}"
+      ManagedBy: "ansible"
+  register: nat_gateway
+  when: create_nat_gateway | default(true)
+
+- name: Create Route Table for Private Subnets
+  amazon.aws.ec2_vpc_route_table:
+    vpc_id: "{{ vpc_result.vpc.id }}"
+    region: "{{ aws_region }}"
+    tags:
+      Name: "rt-{{ environment }}-private"
+      Environment: "{{ environment }}"
+      Type: "private"
+  register: private_route_table
+  when: create_nat_gateway | default(true)
+
 - name: Add NAT Gateway Route to Private Route Table
   amazon.aws.ec2_route:
     route_table_id: "{{ private_route_table.route_table.id }}"
     destination_cidr_block: "0.0.0.0/0"
-    gateway_id: "{{ nat_gateway.nat_gateway_id }}"
+    nat_gateway_id: "{{ nat_gateway.nat_gateway_id }}"
     region: "{{ aws_region }}"
   when: create_nat_gateway | default(true)
 
-- name: Associate Private Subnets with Private Route Table
+- name: Associate ALL Private Subnets with Single Route Table
   amazon.aws.ec2_vpc_route_table_association:
     subnet_id: "{{ item.subnet.id }}"
     route_table_id: "{{ private_route_table.route_table.id }}"
