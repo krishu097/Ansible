@@ -3,13 +3,7 @@
   amazon.aws.iam_role:
     name: "eks-cluster-role-{{ environment | regex_replace('[^a-zA-Z0-9+=,.@-_]', '') }}"
     description: "IAM role for EKS cluster"
-    assume_role_policy_document:
-      Version: "2012-10-17"
-      Statement:
-        - Effect: "Allow"
-          Principal:
-            Service: "eks.amazonaws.com"
-          Action: "sts:AssumeRole"
+    assume_role_policy_document: "{{ eks_cluster_trust_policy | to_json }}"
     managed_policies: "{{ eks_cluster_managed_policies }}"
     tags:
       Environment: "{{ environment }}"
@@ -17,15 +11,9 @@
 
 - name: Create EKS Node Group Role
   amazon.aws.iam_role:
-    name: "eks-nodegroup-role-{{ environment }}"
+    name: "eks-nodegroup-role-{{ environment | regex_replace('[^a-zA-Z0-9+=,.@-_]', '') }}"
     description: "IAM role for EKS worker nodes"
-    assume_role_policy:
-      Version: "2012-10-17"
-      Statement:
-        - Effect: "Allow"
-          Principal:
-            Service: "ec2.amazonaws.com"
-          Action: "sts:AssumeRole"
+    assume_role_policy_document: "{{ eks_nodegroup_trust_policy | to_json }}"
     managed_policies: "{{ eks_nodegroup_managed_policies }}"
     tags:
       Environment: "{{ environment }}"
@@ -33,9 +21,9 @@
 
 - name: Create ECR Access Policy
   amazon.aws.iam_policy:
-    name: "eks-ecr-access-{{environment | regex_replace('[^a-zA-Z0-9+=,.@-_]', '' }}"
+    name: "eks-ecr-access-{{ environment | regex_replace('[^a-zA-Z0-9+=,.@-_]', '') }}"
     description: "ECR access for EKS workloads"
-    policy_document: "{{ ecr_policy_document }}"
+    policy_document: "{{ ecr_policy_document | to_json }}"
     tags:
       Environment: "{{ environment }}"
   register: ecr_policy
