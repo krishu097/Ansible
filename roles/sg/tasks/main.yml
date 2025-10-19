@@ -1,0 +1,35 @@
+---
+- name: Create EKS Control Plane Security Group
+  amazon.aws.ec2_security_group:
+    name: "eks-controlplane-{{ environment }}"
+    description: "EKS Control Plane Security Group"
+    vpc_id: "{{ vpc_result.vpc.id }}"
+    region: "{{ aws_region }}"
+    rules:
+      - proto: tcp
+        ports:
+          - 443
+        cidr_ip: "0.0.0.0/0"
+        rule_desc: "Kubernetes API"
+    tags:
+      Environment: "{{ environment }}"
+      Name: "eks-controlplane-{{ environment }}"
+  register: eks_controlplane_sg
+
+- name: Create EKS Worker Node Security Group
+  amazon.aws.ec2_security_group:
+    name: "eks-workernodes-{{ environment }}"
+    description: "EKS Worker Nodes Security Group"
+    vpc_id: "{{ vpc_result.vpc.id }}"
+    region: "{{ aws_region }}"
+    rules:
+      - proto: all
+        group_name: "eks-controlplane-{{ environment }}"
+        rule_desc: "Allow all from control plane"
+      - proto: all
+        group_name: "eks-workernodes-{{ environment }}"
+        rule_desc: "Allow all between worker nodes"
+    tags:
+      Environment: "{{ environment }}"
+      Name: "eks-workernodes-{{ environment }}"
+  register: eks_workernodes_sg

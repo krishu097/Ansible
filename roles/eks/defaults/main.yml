@@ -1,0 +1,11 @@
+---
+eks_version: "1.32"
+eks_cluster_name: "eks-{{ environment }}"
+
+node_groups:
+  - name: "main"
+    instance_type: "t3.medium"
+    desired_size: 2
+    min_size: 1
+    max_size: 3
+    disk_size: 20

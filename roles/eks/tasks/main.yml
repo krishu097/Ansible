@@ -1,0 +1,37 @@
+---
+- name: Create EKS Cluster Role
+  amazon.aws.iam_role:
+    name: "eks-cluster-role-{{ environment }}"
+    description: "IAM role for EKS cluster"
+    assume_role_policy:
+      Version: "2012-10-17"
+      Statement:
+        - Effect: "Allow"
+          Principal:
+            Service: "eks.amazonaws.com"
+          Action: "sts:AssumeRole"
+    managed_policies:
+      - "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy"
+      - "arn:aws:iam::aws:policy/AmazonEKSVPCResourceController"
+    tags:
+      Environment: "{{ environment }}"
+      ManagedBy: "ansible"
+  register: eks_cluster_role
+
+- name: Create EKS Cluster
+  community.aws.eks_cluster:
+    name: "eks-{{ environment }}"
+    version: "1.28"
+    role_arn: "{{ eks_cluster_role.role.arn }}"
+    vpc:
+      subnets:
+        - "{{ public_subnets_result.results[0].subnet.id }}"
+        - "{{ public_subnets_result.results[1].subnet.id }}"
+      security_groups: []
+    region: "{{ aws_region }}"
+    tags:
+      Environment: "{{ environment }}"
+      ManagedBy: "ansible"
+  register: eks_cluster
+  async: 1800
+  poll: 30

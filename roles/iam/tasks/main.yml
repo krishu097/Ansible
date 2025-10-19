@@ -1,0 +1,69 @@
+---
+- name: Create EKS Cluster Role
+  amazon.aws.iam_role:
+    name: "eks-cluster-role-{{ environment }}"
+    description: "IAM role for EKS cluster"
+    assume_role_policy:
+      Version: "2012-10-17"
+      Statement:
+        - Effect: "Allow"
+          Principal:
+            Service: "eks.amazonaws.com"
+          Action: "sts:AssumeRole"
+    managed_policies:
+      - "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy"
+      - "arn:aws:iam::aws:policy/AmazonEKSVPCResourceController"
+    tags:
+      Environment: "{{ environment }}"
+  register: eks_cluster_role
+
+- name: Create EKS Node Group Role
+  amazon.aws.iam_role:
+    name: "eks-nodegroup-role-{{ environment }}"
+    description: "IAM role for EKS worker nodes"
+    assume_role_policy:
+      Version: "2012-10-17"
+      Statement:
+        - Effect: "Allow"
+          Principal:
+            Service: "ec2.amazonaws.com"
+          Action: "sts:AssumeRole"
+    managed_policies:
+      - "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy"
+      - "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy"
+      - "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
+      - "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+    tags:
+      Environment: "{{ environment }}"
+  register: eks_nodegroup_role
+
+- name: Create ECR Access Policy
+  amazon.aws.iam_policy:
+    name: "eks-ecr-access-{{ environment }}"
+    description: "ECR access for EKS workloads"
+    policy:
+      Version: "2012-10-17"
+      Statement:
+        - Effect: "Allow"
+          Action:
+            - "ecr:GetAuthorizationToken"
+            - "ecr:BatchCheckLayerAvailability"
+            - "ecr:GetDownloadUrlForLayer"
+            - "ecr:GetRepositoryPolicy"
+            - "ecr:DescribeRepositories"
+            - "ecr:ListImages"
+            - "ecr:DescribeImages"
+            - "ecr:BatchGetImage"
+            - "ecr:GetLifecyclePolicy"
+            - "ecr:GetLifecyclePolicyPreview"
+            - "ecr:ListTagsForResource"
+            - "ecr:DescribeImageScanFindings"
+          Resource: "*"
+    tags:
+      Environment: "{{ environment }}"
+  register: ecr_policy
+
+- name: Attach ECR Policy to Node Group Role
+  amazon.aws.iam_attach_policy:
+    policy_arn: "{{ ecr_policy.policy.arn }}"
+    role_name: "{{ eks_nodegroup_role.role.role_name }}"
