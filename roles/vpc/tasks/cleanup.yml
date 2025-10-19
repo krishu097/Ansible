@@ -6,10 +6,113 @@
     region: "{{ aws_region }}"
   register: vpc_info
 
-- name: Delete VPC and dependencies
-  amazon.aws.ec2_vpc_net:
-    vpc_id: "{{ item.id }}"
-    state: absent
-    region: "{{ aws_region }}"
-  loop: "{{ vpc_info.vpcs }}"
+- name: Cleanup VPC Dependencies
+  block:
+    - name: Get NAT Gateways in VPC
+      amazon.aws.ec2_vpc_nat_gateway_info:
+        filters:
+          "vpc-id": "{{ vpc_info.vpcs[0].id }}"
+          "state": ["available", "pending"]
+        region: "{{ aws_region }}"
+      register: nat_gateways
+      when: vpc_info.vpcs | length > 0
+
+    - name: Delete NAT Gateways
+      amazon.aws.ec2_vpc_nat_gateway:
+        state: absent
+        nat_gateway_id: "{{ item.nat_gateway_id }}"
+        wait: yes
+        region: "{{ aws_region }}"
+      loop: "{{ nat_gateways.nat_gateways }}"
+      when:
+        - vpc_info.vpcs | length > 0
+        - nat_gateways.nat_gateways | length > 0
+      loop_control:
+        label: "{{ item.nat_gateway_id }}"
+
+    - name: Get Route Tables in VPC
+      amazon.aws.ec2_vpc_route_table_info:
+        filters:
+          "vpc-id": "{{ vpc_info.vpcs[0].id }}"
+        region: "{{ aws_region }}"
+      register: route_tables
+      when: vpc_info.vpcs | length > 0
+
+    - name: Delete Non-Main Route Tables
+      amazon.aws.ec2_vpc_route_table:
+        route_table_id: "{{ item.route_table_id }}"
+        state: absent
+        region: "{{ aws_region }}"
+      loop: "{{ route_tables.route_tables }}"
+      when:
+        - vpc_info.vpcs | length > 0
+        - not item.associations | selectattr('main') | list | length > 0
+      loop_control:
+        label: "{{ item.route_table_id }}"
+
+    - name: Get Internet Gateways in VPC
+      amazon.aws.ec2_vpc_igw_info:
+        filters:
+          "attachment.vpc-id": "{{ vpc_info.vpcs[0].id }}"
+        region: "{{ aws_region }}"
+      register: internet_gateways
+      when: vpc_info.vpcs | length > 0
+
+    - name: Detach and Delete Internet Gateways
+      block:
+        - name: Detach Internet Gateway
+          amazon.aws.ec2_vpc_igw:
+            vpc_id: "{{ vpc_info.vpcs[0].id }}"
+            state: absent
+            region: "{{ aws_region }}"
+          register: igw_detach
+          when: internet_gateways.gateways | length > 0
+
+        - name: Delete Internet Gateway
+          amazon.aws.ec2_vpc_igw:
+            igw_id: "{{ item.internet_gateway_id }}"
+            state: absent
+            region: "{{ aws_region }}"
+          loop: "{{ internet_gateways.gateways }}"
+          when: internet_gateways.gateways | length > 0
+          loop_control:
+            label: "{{ item.internet_gateway_id }}"
+
+    - name: Get Subnets in VPC
+      amazon.aws.ec2_vpc_subnet_info:
+        filters:
+          "vpc-id": "{{ vpc_info.vpcs[0].id }}"
+        region: "{{ aws_region }}"
+      register: subnets
+      when: vpc_info.vpcs | length > 0
+
+    - name: Delete Subnets
+      amazon.aws.ec2_vpc_subnet:
+        state: absent
+        subnet_id: "{{ item.subnet_id }}"
+        region: "{{ aws_region }}"
+      loop: "{{ subnets.subnets }}"
+      when: vpc_info.vpcs | length > 0
+      loop_control:
+        label: "{{ item.subnet_id }}"
+
+    - name: Delete VPC
+      amazon.aws.ec2_vpc_net:
+        vpc_id: "{{ vpc_info.vpcs[0].id }}"
+        state: absent
+        region: "{{ aws_region }}"
+        wait: yes
+      when: vpc_info.vpcs | length > 0
+      register: vpc_delete_result
+
+    - name: VPC Cleanup Success
+      debug:
+        msg: "✅ VPC and all dependencies deleted successfully"
+      when: vpc_delete_result.changed | default(false)
+
   when: vpc_info.vpcs | length > 0
+
+- name: No VPC Found
+  debug:
+    msg: "ℹ️ No VPC found for environment {{ environment }} - nothing to cleanup"
+  when: vpc_info.vpcs | length == 0

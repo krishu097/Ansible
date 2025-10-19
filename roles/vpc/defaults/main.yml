@@ -12,3 +12,5 @@ vpc_private_subnets:
     az: "us-east-2a"
   - cidr: "10.0.20.0/24"
     az: "us-east-2b"
+
+create_nat_gateway: true

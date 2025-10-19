@@ -33,3 +33,56 @@
       Type: "public"
   loop: "{{ vpc_public_subnets }}"
   register: public_subnets_result
+
+- name: Create Private Subnets
+  amazon.aws.ec2_vpc_subnet:
+    vpc_id: "{{ vpc_result.vpc.id }}"
+    cidr: "{{ item.cidr }}"
+    az: "{{ item.az }}"
+    region: "{{ aws_region }}"
+    map_public: false
+    tags:
+      Name: "subnet-{{ environment }}-private-{{ item.az }}"
+      Environment: "{{ environment }}"
+      Type: "private"
+  loop: "{{ vpc_private_subnets }}"
+  register: private_subnets_result
+
+- name: Create NAT Gateway (Optional - for private subnet internet access)
+  amazon.aws.ec2_vpc_nat_gateway:
+    state: present
+    subnet_id: "{{ public_subnets_result.results[0].subnet.id }}"
+    wait: yes
+    region: "{{ aws_region }}"
+    tags:
+      Name: "nat-{{ environment }}"
+      Environment: "{{ environment }}"
+  register: nat_gateway
+  when: create_nat_gateway | default(true)
+
+- name: Create Route Table for Private Subnets
+  amazon.aws.ec2_vpc_route_table:
+    vpc_id: "{{ vpc_result.vpc.id }}"
+    region: "{{ aws_region }}"
+    tags:
+      Name: "rt-{{ environment }}-private"
+      Environment: "{{ environment }}"
+      Type: "private"
+  register: private_route_table
+  when: create_nat_gateway | default(true)
+
+- name: Add NAT Gateway Route to Private Route Table
+  community.aws.ec2_route:
+    route_table_id: "{{ private_route_table.route_table.id }}"
+    destination_cidr_block: "0.0.0.0/0"
+    gateway_id: "{{ nat_gateway.nat_gateway_id }}"
+    region: "{{ aws_region }}"
+  when: create_nat_gateway | default(true)
+
+- name: Associate Private Subnets with Private Route Table
+  amazon.aws.ec2_vpc_route_table_association:
+    subnet_id: "{{ item.subnet.id }}"
+    route_table_id: "{{ private_route_table.route_table.id }}"
+    region: "{{ aws_region }}"
+  loop: "{{ private_subnets_result.results }}"
+  when: create_nat_gateway | default(true)
