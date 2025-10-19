@@ -48,33 +48,7 @@
   loop: "{{ vpc_private_subnets }}"
   register: private_subnets_result
 
-- name: Create NAT Gateway (Optional - for private subnet internet access)
-  amazon.aws.ec2_vpc_nat_gateway:
-    state: present
-    subnet_id: "{{ public_subnets_result.results[0].subnet.id }}"
-    wait: yes
-    region: "{{ aws_region }}"
-    tags:
-      Name: "nat-{{ environment }}"
-      Environment: "{{ environment }}"
-  register: nat_gateway
-  when: create_nat_gateway | default(true)
-
-- name: Create Route Table for Private Subnets with NAT Route
-  amazon.aws.ec2_vpc_route_table:
-    vpc_id: "{{ vpc_result.vpc.id }}"
-    region: "{{ aws_region }}"
-    routes:
-      - dest: "0.0.0.0/0"
-        gateway_id: "{{ nat_gateway.nat_gateway_id }}"
-    tags:
-      Name: "rt-{{ environment }}-private"
-      Environment: "{{ environment }}"
-      Type: "private"
-  register: private_route_table
-  when: create_nat_gateway | default(true)
-
-- name: Create Single NAT Gateway in first public subnet
+- name: Create Single NAT Gateway
   amazon.aws.ec2_vpc_nat_gateway:
     state: present
     subnet_id: "{{ public_subnets_result.results[0].subnet.id }}"
@@ -88,10 +62,13 @@
   register: nat_gateway
   when: create_nat_gateway | default(true)
 
-- name: Create Route Table for Private Subnets
+- name: Create Route Table for Private Subnets WITH NAT Route
   amazon.aws.ec2_vpc_route_table:
     vpc_id: "{{ vpc_result.vpc.id }}"
     region: "{{ aws_region }}"
+    routes:
+      - dest: "0.0.0.0/0"
+        gateway_id: "{{ nat_gateway.nat_gateway_id }}"
     tags:
       Name: "rt-{{ environment }}-private"
       Environment: "{{ environment }}"
@@ -99,15 +76,7 @@
   register: private_route_table
   when: create_nat_gateway | default(true)
 
-- name: Add NAT Gateway Route to Private Route Table
-  amazon.aws.ec2_route:
-    route_table_id: "{{ private_route_table.route_table.id }}"
-    destination_cidr_block: "0.0.0.0/0"
-    nat_gateway_id: "{{ nat_gateway.nat_gateway_id }}"
-    region: "{{ aws_region }}"
-  when: create_nat_gateway | default(true)
-
-- name: Associate ALL Private Subnets with Single Route Table
+- name: Associate ALL Private Subnets with Private Route Table
   amazon.aws.ec2_vpc_route_table_association:
     subnet_id: "{{ item.subnet.id }}"
     route_table_id: "{{ private_route_table.route_table.id }}"
