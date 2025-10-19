@@ -29,7 +29,7 @@
   register: ecr_policy
 
 - name: Attach ECR Policy to Node Group Role
-  community.aws.iam_policy_attachment:
+  amazon.aws.iam_policy_attachment:
     policy_arn: "{{ ecr_policy.policy.arn }}"
     iam_type: "role"
     iam_name: "{{ eks_nodegroup_role.role.role_name }}"
