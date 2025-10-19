@@ -3,7 +3,7 @@
   amazon.aws.iam_role:
     name: "eks-cluster-role-{{ environment }}"
     description: "IAM role for EKS cluster"
-    assume_role_policy:
+    assume_role_policy_document:
       Version: "2012-10-17"
       Statement:
         - Effect: "Allow"
@@ -35,7 +35,7 @@
   amazon.aws.iam_policy:
     name: "eks-ecr-access-{{ environment }}"
     description: "ECR access for EKS workloads"
-    policy: "{{ ecr_policy_document }}"
+    policy_document: "{{ ecr_policy_document }}"
     tags:
       Environment: "{{ environment }}"
   register: ecr_policy
