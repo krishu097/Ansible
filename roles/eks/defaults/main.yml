@@ -1,3 +1,4 @@
+#
 ---
 # EKS Cluster Configuration
 eks_version: "1.32"
@@ -15,21 +16,6 @@ nodegroup_ami_type: "AL2_x86_64"
 nodegroup_min_size: 1
 nodegroup_desired_size: 2
 nodegroup_max_size: 3
-
-# Cluster Networking
-cluster_endpoint_private_access: true
-cluster_endpoint_public_access: true
-cluster_public_access_cidrs:
-  - "0.0.0.0/0"
-
-# Cluster Logging
-cluster_logging_enabled: true
-cluster_log_types:
-  - api
-  - audit
-  - authenticator
-  - controllerManager
-  - scheduler
 
 # Node Group Update Configuration
 nodegroup_update_max_unavailable: 1

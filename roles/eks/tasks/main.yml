@@ -41,6 +41,16 @@
     all_subnet_ids: "{{ (vpc_subnets_info.subnets | selectattr('tags.Type', 'equalto', 'public') | map(attribute='id') | list) + (vpc_subnets_info.subnets | selectattr('tags.Type', 'equalto', 'private') | map(attribute='id') | list) }}"
     private_subnet_ids: "{{ vpc_subnets_info.subnets | selectattr('tags.Type', 'equalto', 'private') | map(attribute='id') | list }}"
 
+- name: Debug EKS cluster parameters
+  debug:
+    msg: |
+      EKS Cluster Parameters:
+      - Name: {{ eks_cluster_name }}
+      - Version: {{ eks_version }}
+      - Role ARN: {{ cluster_role_arn }}
+      - Subnets: {{ all_subnet_ids }}
+      - Security Groups: ['{{ control_plane_sg_id }}']
+
 - name: Create EKS Cluster
   community.aws.eks_cluster:
     name: "{{ eks_cluster_name }}"
@@ -49,12 +59,6 @@
     subnets: "{{ all_subnet_ids }}"
     security_groups:
       - "{{ control_plane_sg_id }}"
-    endpoint_private_access: "{{ cluster_endpoint_private_access }}"
-    endpoint_public_access: "{{ cluster_endpoint_public_access }}"
-    public_access_cidrs: "{{ cluster_public_access_cidrs }}"
-    logging:
-      enable: "{{ cluster_logging_enabled }}"
-      types: "{{ cluster_log_types }}"
     tags: "{{ eks_cluster_tags }}"
     wait: true
     wait_timeout: "{{ cluster_create_timeout }}"
@@ -62,19 +66,19 @@
 
 - name: Create EKS Node Group
   community.aws.eks_nodegroup:
-    cluster_name: "{{ eks_cluster_name }}"
     name: "{{ nodegroup_name }}"
-    nodegroup_name: "{{ nodegroup_name }}"
-    subnets: "{{ private_subnet_ids }}"
+    cluster_name: "{{ eks_cluster_name }}"
+    state: present
     node_role: "{{ nodegroup_role_arn }}"
-    capacity_type: "{{ nodegroup_capacity_type }}"
-    instance_types: "{{ nodegroup_instance_types }}"
+    subnets: "{{ private_subnet_ids }}"
     scaling_config:
       min_size: "{{ nodegroup_min_size }}"
       max_size: "{{ nodegroup_max_size }}"
       desired_size: "{{ nodegroup_desired_size }}"
     disk_size: "{{ nodegroup_disk_size }}"
+    instance_types: "{{ nodegroup_instance_types }}"
     ami_type: "{{ nodegroup_ami_type }}"
+    capacity_type: "{{ nodegroup_capacity_type }}"
     remote_access:
       ec2_ssh_key: "{{ ssh_key_name | default(omit) }}"
       source_security_groups:
