@@ -9,11 +9,26 @@
     name: "eks-nodegroup-role"
   register: nodegroup_role_info
 
-- name: Debug IAM role structure
+- name: Get EKS Control Plane Security Group
+  amazon.aws.ec2_security_group_info:
+    region: "{{ aws_region }}"
+    filters:
+      "tag:Name": "eks-controlplane-{{ env_name }}"
+      "tag:Environment": "{{ env_name }}"
+  register: eks_controlplane_sg_info
+
+- name: Get VPC Subnets
+  amazon.aws.ec2_vpc_subnet_info:
+    region: "{{ aws_region }}"
+    filters:
+      "tag:Environment": "{{ env_name }}"
+  register: vpc_subnets_info
+
+- name: Debug Temporary debug info stage
   debug:
     msg: |
-      Cluster Role Info Structure: {{ cluster_role_info | to_nice_json }}
-      Node Group Role Info Structure: {{ nodegroup_role_info | to_nice_json }}
+      - Control Plane SG Found: {{ eks_controlplane_sg_info.security_groups | length > 0 }}
+      - VPC Subnets Found: {{ vpc_subnets_info.subnets | length > 0 }}
 
 - name: Create EKS Cluster
   community.aws.eks_cluster:
