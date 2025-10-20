@@ -1,23 +1,23 @@
 ---
 - name: Create VPC
   amazon.aws.ec2_vpc_net:
-    name: "vpc-{{ environment }}"
+    name: "vpc-{{ env_name }}"
     cidr_block: "{{ vpc_cidr }}"
     region: "{{ aws_region }}"
     tags:
-      Environment: "{{ environment }}"
+      Environment: "{{ env_name }}"
       Project: "ansible-cicd"
       GitCommit: "{{ git_commit | default('unknown') }}"
       ManagedBy: "ansible"
   register: vpc_result
 
 - name: Create Internet Gateway
-  community.aws.ec2_vpc_igw:
+  amazon.aws.ec2_vpc_igw:
     vpc_id: "{{ vpc_result.vpc.id }}"
     state: present
     tags:
-      Name: "igw-{{ environment }}"
-      Environment: "{{ environment }}"
+      Name: "igw-{{ env_name }}"
+      Environment: "{{ env_name }}"
   register: igw_result
 
 - name: Create Public Subnets
@@ -28,8 +28,8 @@
     region: "{{ aws_region }}"
     map_public: true
     tags:
-      Name: "subnet-{{ environment }}-public-{{ item.az }}"
-      Environment: "{{ environment }}"
+      Name: "subnet-{{ env_name }}-public-{{ item.az }}"
+      Environment: "{{ env_name }}"
       Type: "public"
   loop: "{{ vpc_public_subnets }}"
   register: public_subnets_result
@@ -42,8 +42,8 @@
     region: "{{ aws_region }}"
     map_public: false
     tags:
-      Name: "subnet-{{ environment }}-private-{{ item.az }}"
-      Environment: "{{ environment }}"
+      Name: "subnet-{{ env_name }}-private-{{ item.az }}"
+      Environment: "{{ env_name }}"
       Type: "private"
   loop: "{{ vpc_private_subnets }}"
   register: private_subnets_result
@@ -56,8 +56,8 @@
     wait_timeout: 600
     region: "{{ aws_region }}"
     tags:
-      Name: "nat-{{ environment }}"
-      Environment: "{{ environment }}"
+      Name: "nat-{{ env_name }}"
+      Environment: "{{ env_name }}"
       ManagedBy: "ansible"
   register: nat_gateway
   when: create_nat_gateway | default(true)
@@ -70,8 +70,8 @@
       - dest: "0.0.0.0/0"
         gateway_id: "{{ nat_gateway.nat_gateway_id }}"
     tags:
-      Name: "rt-{{ environment }}-private"
-      Environment: "{{ environment }}"
+      Name: "rt-{{ env_name }}-private"
+      Environment: "{{ env_name }}"
       Type: "private"
   register: private_route_table
   when: create_nat_gateway | default(true)
