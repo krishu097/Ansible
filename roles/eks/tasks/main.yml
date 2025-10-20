@@ -1,9 +1,19 @@
 ---
+- name: Get EKS Cluster Role ARN
+  amazon.aws.iam_role_info:
+    name: "eks-cluster-role"
+  register: cluster_role_info
+
+- name: Get EKS Node Group Role ARN
+  amazon.aws.iam_role_info:
+    name: "eks-nodegroup-role"
+  register: nodegroup_role_info
+
 - name: Create EKS Cluster
   community.aws.eks_cluster:
     name: "{{ eks_cluster_name }}"
     version: "{{ eks_version }}"
-    role_arn: "{{ eks_cluster_role.role.arn }}"
+    role_arn: "{{ cluster_role_info.roles[0].arn }}" # Use the looked-up ARN
     vpc_config:
       subnet_ids: "{{ (public_subnets_result.results + private_subnets_result.results) | map(attribute='subnet.id') | list }}"
       security_group_ids:
@@ -28,7 +38,7 @@
     name: "{{ nodegroup_name }}"
     nodegroup_name: "{{ nodegroup_name }}"
     subnet_ids: "{{ private_subnets_result.results | map(attribute='subnet.id') | list }}"
-    node_role: "{{ eks_nodegroup_role.role.arn }}"
+    node_role: "{{ nodegroup_role_info.roles[0].arn }}" # Use the looked-up ARN
     capacity_type: "{{ nodegroup_capacity_type }}"
     instance_types: "{{ nodegroup_instance_types }}"
     scaling_config:
@@ -50,7 +60,7 @@
 
 - name: Update kubeconfig for EKS cluster using AWS CLI
   ansible.builtin.shell:
-    cmd: "aws eks update-kubeconfig --region {{ aws_region }} --name {{ eks_cluster_name }} --role-arn {{ eks_cluster_role.role.arn }}"
+    cmd: "aws eks update-kubeconfig --region {{ aws_region }} --name {{ eks_cluster_name }} --role-arn {{ cluster_role_info.roles[0].arn }}"
   environment:
     AWS_DEFAULT_REGION: "{{ aws_region }}"
 
