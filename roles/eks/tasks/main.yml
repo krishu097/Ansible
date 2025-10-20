@@ -79,10 +79,10 @@
     instance_types: "{{ nodegroup_instance_types }}"
     ami_type: "{{ nodegroup_ami_type }}"
     capacity_type: "{{ nodegroup_capacity_type }}"
-    remote_access:
-      ec2_ssh_key: "{{ ssh_key_name | default(omit) }}"
-      source_security_groups:
-        - "{{ worker_nodes_sg_id }}"
+    # remote_access:
+    #   ec2_ssh_key: "{{ ssh_key_name | default(omit) }}"
+    #   source_security_groups:
+    #     - "{{ worker_nodes_sg_id }}"
     update_config:
       max_unavailable: "{{ nodegroup_update_max_unavailable }}"
       max_unavailable_percentage: "{{ nodegroup_update_max_unavailable_percentage | default(omit) }}"
