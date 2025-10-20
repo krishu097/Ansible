@@ -11,9 +11,22 @@
   debug:
     var: vpc_info
 
-- name: Fail if no VPC found
-  fail:
-    msg: "No VPC found with Environment tag '{{ env_name }}'. Nothing to destroy."
+- name: Show cleanup summary
+  debug:
+    msg: |
+      🔍 Cleanup Search Results:
+      Environment: {{ env_name }}
+      VPCs Found: {{ vpc_info.vpcs | length }}
+      {% if vpc_info.vpcs %}
+      VPC IDs: {{ vpc_info.vpcs | map(attribute='id') | list }}
+      {% endif %}
+
+      {% if vpc_info.vpcs | length == 0 %}
+      ℹ️  No VPCs found matching criteria. Nothing to clean up.
+      {% endif %}
+
+- name: Skip cleanup if no VPCs found
+  meta: end_play
   when: vpc_info.vpcs | length == 0
 
 - block:
