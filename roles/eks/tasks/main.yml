@@ -32,45 +32,26 @@
       "tag:Environment": "{{ env_name }}"
   register: vpc_subnets_info
 
-- name: Debug all dependencies
-  debug:
-    msg: |
-      🔍 EKS Dependencies Status:
-      - Control Plane SG Found: {{ eks_controlplane_sg_info.security_groups | length > 0 }}
-      - Worker Nodes SG Found: {{ eks_workernodes_sg_info.security_groups | length > 0 }}
-      - VPC Subnets Found: {{ vpc_subnets_info.subnets | length > 0 }}
-
-      Control Plane SG ID: {{ eks_controlplane_sg_info.security_groups[0].group_id if eks_controlplane_sg_info.security_groups else 'NOT_FOUND' }}
-      Worker Nodes SG ID: {{ eks_workernodes_sg_info.security_groups[0].group_id if eks_workernodes_sg_info.security_groups else 'NOT_FOUND' }}
-      Public Subnets: {{ vpc_subnets_info.subnets | selectattr('tags.Type', 'equalto', 'public') | map(attribute='id') | list }}
-      Private Subnets: {{ vpc_subnets_info.subnets | selectattr('tags.Type', 'equalto', 'private') | map(attribute='id') | list }}
-
-- name: Fail if dependencies missing
-  ansible.builtin.fail:
-    msg: |
-      Missing EKS dependencies!
-      - Control Plane SG: {{ eks_controlplane_sg_info.security_groups | length > 0 }}
-      - Worker Nodes SG: {{ eks_workernodes_sg_info.security_groups | length > 0 }}
-      - VPC Subnets: {{ vpc_subnets_info.subnets | length > 0 }}
-  when: eks_controlplane_sg_info.security_groups | length == 0 or
-    eks_workernodes_sg_info.security_groups | length == 0 or
-    vpc_subnets_info.subnets | length == 0
+- name: Set EKS dependency facts
+  set_fact:
+    cluster_role_arn: "{{ cluster_role_info.iam_roles[0].arn }}"
+    nodegroup_role_arn: "{{ nodegroup_role_info.iam_roles[0].arn }}"
+    control_plane_sg_id: "{{ eks_controlplane_sg_info.security_groups[0].group_id }}"
+    worker_nodes_sg_id: "{{ eks_workernodes_sg_info.security_groups[0].group_id }}"
+    all_subnet_ids: "{{ (vpc_subnets_info.subnets | selectattr('tags.Type', 'equalto', 'public') | map(attribute='id') | list) + (vpc_subnets_info.subnets | selectattr('tags.Type', 'equalto', 'private') | map(attribute='id') | list) }}"
+    private_subnet_ids: "{{ vpc_subnets_info.subnets | selectattr('tags.Type', 'equalto', 'private') | map(attribute='id') | list }}"
 
 - name: Create EKS Cluster
   community.aws.eks_cluster:
     name: "{{ eks_cluster_name }}"
     version: "{{ eks_version }}"
-    role_arn: "{{ cluster_role_info.iam_roles[0].arn }}"
-    vpc_config:
-      subnet_ids: "{{ (vpc_subnets_info.subnets | selectattr('tags.Type', 'equalto', 'public') | map(attribute='id') | list) + (vpc_subnets_info.subnets | selectattr('tags.Type', 'equalto', 'private') | map(attribute='id') | list) }}"
-      security_group_ids:
-        - "{{ eks_controlplane_sg_info.security_groups[0].group_id }}"
-      endpoint_private_access: "{{ cluster_endpoint_private_access }}"
-      endpoint_public_access: "{{ cluster_endpoint_public_access }}"
-      public_access_cidrs: "{{ cluster_public_access_cidrs }}"
-    resources_vpc_config:
-      endpoint_private_access: "{{ cluster_endpoint_private_access }}"
-      endpoint_public_access: "{{ cluster_endpoint_public_access }}"
+    role_arn: "{{ cluster_role_arn }}"
+    subnets: "{{ all_subnet_ids }}"
+    security_groups:
+      - "{{ control_plane_sg_id }}"
+    endpoint_private_access: "{{ cluster_endpoint_private_access }}"
+    endpoint_public_access: "{{ cluster_endpoint_public_access }}"
+    public_access_cidrs: "{{ cluster_public_access_cidrs }}"
     logging:
       enable: "{{ cluster_logging_enabled }}"
       types: "{{ cluster_log_types }}"
@@ -84,8 +65,8 @@
     cluster_name: "{{ eks_cluster_name }}"
     name: "{{ nodegroup_name }}"
     nodegroup_name: "{{ nodegroup_name }}"
-    subnet_ids: "{{ vpc_subnets_info.subnets | selectattr('tags.Type', 'equalto', 'private') | map(attribute='id') | list }}"
-    node_role: "{{ nodegroup_role_info.iam_roles[0].arn }}"
+    subnets: "{{ private_subnet_ids }}"
+    node_role: "{{ nodegroup_role_arn }}"
     capacity_type: "{{ nodegroup_capacity_type }}"
     instance_types: "{{ nodegroup_instance_types }}"
     scaling_config:
@@ -97,7 +78,7 @@
     remote_access:
       ec2_ssh_key: "{{ ssh_key_name | default(omit) }}"
       source_security_groups:
-        - "{{ eks_workernodes_sg_info.security_groups[0].group_id }}"
+        - "{{ worker_nodes_sg_id }}"
     update_config:
       max_unavailable: "{{ nodegroup_update_max_unavailable }}"
       max_unavailable_percentage: "{{ nodegroup_update_max_unavailable_percentage | default(omit) }}"
@@ -105,12 +86,6 @@
     wait: true
     wait_timeout: "{{ nodegroup_create_timeout }}"
   register: eks_nodegroup
-
-- name: Update kubeconfig for EKS cluster using AWS CLI
-  ansible.builtin.shell:
-    cmd: "aws eks update-kubeconfig --region {{ aws_region }} --name {{ eks_cluster_name }} --role-arn {{ cluster_role_info.iam_roles[0].arn }}"
-  environment:
-    AWS_DEFAULT_REGION: "{{ aws_region }}"
 
 - name: Show EKS cluster and nodegroup information
   debug:
@@ -121,10 +96,10 @@
       Cluster Endpoint: {{ eks_cluster.cluster.endpoint }}
       Cluster Status: {{ eks_cluster.cluster.status }}
       Kubernetes Version: {{ eks_cluster.cluster.version }}
-      Control Plane Security Group: {{ eks_controlplane_sg_info.security_groups[0].group_id }}
+      Control Plane Security Group: {{ control_plane_sg_id }}
 
       Node Group Name: {{ eks_nodegroup.nodegroup.nodegroup_name }}
       Node Group Status: {{ eks_nodegroup.nodegroup.status }}
       Node Group Instance Types: {{ eks_nodegroup.nodegroup.instance_types }}
       Node Group Scaling: Min={{ eks_nodegroup.nodegroup.scaling_config.min_size }}, Desired={{ eks_nodegroup.nodegroup.scaling_config.desired_size }}, Max={{ eks_nodegroup.nodegroup.scaling_config.max_size }}
-      Worker Nodes Security Group: {{ eks_workernodes_sg_info.security_groups[0].group_id }}
+      Worker Nodes Security Group: {{ worker_nodes_sg_id }}
