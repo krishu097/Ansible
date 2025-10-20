@@ -6,7 +6,7 @@
     assume_role_policy_document: "{{ eks_cluster_trust_policy | to_json }}"
     managed_policies: "{{ eks_cluster_managed_policies }}"
     tags:
-      Environment: "{{ environment | regex_replace('[^a-zA-Z0-9_.:/=+\\-@ ]', '') }}"
+      Environment: "{{ env_name }}"
   register: eks_cluster_role
 
 - name: Create EKS Node Group Role
@@ -16,7 +16,7 @@
     assume_role_policy_document: "{{ eks_nodegroup_trust_policy | to_json }}"
     managed_policies: "{{ eks_nodegroup_managed_policies }}"
     tags:
-      Environment: "{{ environment | regex_replace('[^a-zA-Z0-9_.:/=+\\-@ ]', '') }}"
+      Environment: "{{ env_name }}"
   register: eks_nodegroup_role
 # - name: Create ECR Access Policy
 #   amazon.aws.iam_policy:

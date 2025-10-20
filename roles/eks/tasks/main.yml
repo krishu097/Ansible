@@ -1,37 +1,70 @@
 ---
-- name: Create EKS Cluster Role
-  amazon.aws.iam_role:
-    name: "eks-cluster-role-{{ environment }}"
-    description: "IAM role for EKS cluster"
-    assume_role_policy:
-      Version: "2012-10-17"
-      Statement:
-        - Effect: "Allow"
-          Principal:
-            Service: "eks.amazonaws.com"
-          Action: "sts:AssumeRole"
-    managed_policies:
-      - "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy"
-      - "arn:aws:iam::aws:policy/AmazonEKSVPCResourceController"
-    tags:
-      Environment: "{{ environment }}"
-      ManagedBy: "ansible"
-  register: eks_cluster_role
-
 - name: Create EKS Cluster
-  community.aws.eks_cluster:
-    name: "eks-{{ environment }}"
-    version: "1.28"
+  amazon.aws.eks_cluster:
+    name: "{{ eks_cluster_name }}"
+    version: "{{ eks_version }}"
     role_arn: "{{ eks_cluster_role.role.arn }}"
-    vpc:
-      subnets:
-        - "{{ public_subnets_result.results[0].subnet.id }}"
-        - "{{ public_subnets_result.results[1].subnet.id }}"
-      security_groups: []
-    region: "{{ aws_region }}"
-    tags:
-      Environment: "{{ environment }}"
-      ManagedBy: "ansible"
+    vpc_config:
+      subnet_ids: "{{ (public_subnets_result.results + private_subnets_result.results) | map(attribute='subnet.id') | list }}"
+      security_group_ids:
+        - "{{ eks_controlplane_sg.group_id }}"
+      endpoint_private_access: "{{ cluster_endpoint_private_access }}"
+      endpoint_public_access: "{{ cluster_endpoint_public_access }}"
+      public_access_cidrs: "{{ cluster_public_access_cidrs }}"
+    resources_vpc_config:
+      endpoint_private_access: "{{ cluster_endpoint_private_access }}"
+      endpoint_public_access: "{{ cluster_endpoint_public_access }}"
+    logging:
+      enable: "{{ cluster_logging_enabled }}"
+      types: "{{ cluster_log_types }}"
+    tags: "{{ eks_cluster_tags }}"
+    wait: true
+    wait_timeout: "{{ cluster_create_timeout }}"
   register: eks_cluster
-  async: 1800
-  poll: 30
+
+- name: Create EKS Node Group
+  amazon.aws.eks_nodegroup:
+    cluster_name: "{{ eks_cluster_name }}"
+    name: "{{ nodegroup_name }}"
+    nodegroup_name: "{{ nodegroup_name }}"
+    subnet_ids: "{{ private_subnets_result.results | map(attribute='subnet.id') | list }}"
+    node_role: "{{ eks_nodegroup_role.role.arn }}"
+    capacity_type: "{{ nodegroup_capacity_type }}"
+    instance_types: "{{ nodegroup_instance_types }}"
+    scaling_config:
+      min_size: "{{ nodegroup_min_size }}"
+      max_size: "{{ nodegroup_max_size }}"
+      desired_size: "{{ nodegroup_desired_size }}"
+    disk_size: "{{ nodegroup_disk_size }}"
+    ami_type: "{{ nodegroup_ami_type }}"
+    remote_access:
+      ec2_ssh_key: "{{ ssh_key_name | default(omit) }}"
+      source_security_groups: "{{ [eks_controlplane_sg.group_id] + nodegroup_remote_access_security_groups }}"
+    update_config:
+      max_unavailable: "{{ nodegroup_update_max_unavailable }}"
+      max_unavailable_percentage: "{{ nodegroup_update_max_unavailable_percentage | default(omit) }}"
+    tags: "{{ nodegroup_tags }}"
+    wait: true
+    wait_timeout: "{{ nodegroup_create_timeout }}"
+  register: eks_nodegroup
+
+- name: Update kubeconfig for EKS cluster using AWS CLI
+  ansible.builtin.shell:
+    cmd: "aws eks update-kubeconfig --region {{ aws_region }} --name {{ eks_cluster_name }} --role-arn {{ eks_cluster_role.role.arn }}"
+  environment:
+    AWS_DEFAULT_REGION: "{{ aws_region }}"
+
+- name: Show EKS cluster and nodegroup information
+  debug:
+    msg: |
+      🎉 EKS Cluster Created Successfully!
+      Cluster Name: {{ eks_cluster.cluster.name }}
+      Cluster ARN: {{ eks_cluster.cluster.arn }}
+      Cluster Endpoint: {{ eks_cluster.cluster.endpoint }}
+      Cluster Status: {{ eks_cluster.cluster.status }}
+      Kubernetes Version: {{ eks_cluster.cluster.version }}
+
+      Node Group Name: {{ eks_nodegroup.nodegroup.nodegroup_name }}
+      Node Group Status: {{ eks_nodegroup.nodegroup.status }}
+      Node Group Instance Types: {{ eks_nodegroup.nodegroup.instance_types }}
+      Node Group Scaling: Min={{ eks_nodegroup.nodegroup.scaling_config.min_size }}, Desired={{ eks_nodegroup.nodegroup.scaling_config.desired_size }}, Max={{ eks_nodegroup.nodegroup.scaling_config.max_size }}

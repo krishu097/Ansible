@@ -4,6 +4,11 @@
   gather_facts: false
 
   tasks:
+    - name: Include cleanup tasks
+      ansible.builtin.include_role:
+        name: iam
+        tasks_from: cleanup.yml
+
     - name: Include EKS Security Groups cleanup tasks
       ansible.builtin.include_role:
         name: sg

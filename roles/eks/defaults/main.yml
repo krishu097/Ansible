@@ -1,11 +1,59 @@
 ---
+# EKS Cluster Configuration
 eks_version: "1.32"
-eks_cluster_name: "eks-{{ environment }}"
+eks_cluster_name: "eks-{{ env_name }}"
 
-node_groups:
-  - name: "main"
-    instance_type: "t3.medium"
-    desired_size: 2
-    min_size: 1
-    max_size: 3
-    disk_size: 20
+# Node Group Configuration
+nodegroup_name: "ng-{{ env_name }}"
+nodegroup_capacity_type: "ON_DEMAND"
+nodegroup_instance_types:
+  - "t3.medium"
+nodegroup_disk_size: 20
+nodegroup_ami_type: "AL2_x86_64"
+
+# Node Group Scaling Configuration
+nodegroup_min_size: 1
+nodegroup_desired_size: 2
+nodegroup_max_size: 3
+
+# Cluster Networking
+cluster_endpoint_private_access: true
+cluster_endpoint_public_access: true
+cluster_public_access_cidrs:
+  - "0.0.0.0/0"
+
+# Cluster Logging
+cluster_logging_enabled: true
+cluster_log_types:
+  - api
+  - audit
+  - authenticator
+  - controllerManager
+  - scheduler
+
+# Node Group Update Configuration
+nodegroup_update_max_unavailable: 1
+nodegroup_update_max_unavailable_percentage: null
+
+# Remote Access (SSH to nodes) - Optional
+ssh_key_name: null
+nodegroup_remote_access_security_groups: []
+
+# Tags
+eks_cluster_tags:
+  Environment: "{{ env_name }}"
+  Name: "eks-{{ env_name }}"
+  ManagedBy: "ansible"
+  Project: "ansible-cicd"
+
+nodegroup_tags:
+  Environment: "{{ env_name }}"
+  Name: "ng-{{ env_name }}"
+  ManagedBy: "ansible"
+  Project: "ansible-cicd"
+
+# Timeouts (in seconds)
+cluster_create_timeout: 1200 # 20 minutes
+cluster_delete_timeout: 1800 # 30 minutes
+nodegroup_create_timeout: 1200 # 20 minutes
+nodegroup_delete_timeout: 1200 # 20 minutes
