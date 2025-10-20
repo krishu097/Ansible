@@ -9,10 +9,10 @@ eks_controlplane_rules:
 # EKS Worker Nodes Security Group Rules
 eks_workernodes_rules:
   - proto: all
-    group_name: "eks-controlplane-{{ environment }}"
+    group_name: "eks-controlplane-{{ env_name }}"
     rule_desc: "Allow all from control plane"
   - proto: all
-    group_name: "eks-workernodes-{{ environment }}"
+    group_name: "eks-workernodes-{{ env_name }}"
     rule_desc: "Allow all between worker nodes"
   - proto: tcp
     ports: [1025, 65535]
