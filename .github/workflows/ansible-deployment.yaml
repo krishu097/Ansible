@@ -57,7 +57,7 @@ jobs:
 
       - name: Install Ansible Collections
         run: |
-          ansible-galaxy collection install amazon.aws
+          ansible-galaxy collection install amazon.aws -f
           ansible-galaxy collection install community.aws
 
       - name: Syntax Check Playbooks
