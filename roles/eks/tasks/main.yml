@@ -1,6 +1,6 @@
 ---
 - name: Create EKS Cluster
-  amazon.aws.eks_cluster:
+  community.aws.eks_cluster:
     name: "{{ eks_cluster_name }}"
     version: "{{ eks_version }}"
     role_arn: "{{ eks_cluster_role.role.arn }}"
@@ -23,7 +23,7 @@
   register: eks_cluster
 
 - name: Create EKS Node Group
-  amazon.aws.eks_nodegroup:
+  community.aws.eks_nodegroup:
     cluster_name: "{{ eks_cluster_name }}"
     name: "{{ nodegroup_name }}"
     nodegroup_name: "{{ nodegroup_name }}"
