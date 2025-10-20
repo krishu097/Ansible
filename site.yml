@@ -9,5 +9,5 @@
   roles:
     - role: vpc
     #- role: eks
-    # - role: sg
+    - role: sg
     # - role: iam
