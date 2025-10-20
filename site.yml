@@ -10,4 +10,4 @@
     - role: vpc
     #- role: eks
     - role: sg
-    # - role: iam
+    - role: iam
