@@ -1,4 +1,6 @@
 ---
+env_name: "uat-edfx"
+aws_region: "us-east-1"
 # EKS Control Plane Security Group Rules
 eks_controlplane_rules:
   - proto: tcp
