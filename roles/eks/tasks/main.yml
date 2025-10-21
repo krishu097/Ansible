@@ -115,10 +115,7 @@
     instance_types: "{{ nodegroup_instance_types }}"
     ami_type: "{{ nodegroup_ami_type }}"
     capacity_type: "{{ nodegroup_capacity_type }}"
-    # Uses your existing worker nodes SG for remote access
-    remote_access:
-      source_sg: "{{ worker_nodes_sg_id }}" # CORRECT parameter name
-    tags: "{{ nodegroup_tags }}"
+
     wait: true
     wait_timeout: "{{ nodegroup_create_timeout }}"
   register: eks_nodegroup
@@ -129,7 +126,7 @@
       aws eks update-kubeconfig \
         --region {{ aws_region }} \
         --name {{ eks_cluster_name }} \
-        --role-arn {{ cluster_role_arn }}        # Use CLUSTER role for kubeconfig
+        --role-arn {{ cluster_role_arn }}
   environment:
     AWS_DEFAULT_REGION: "{{ aws_region }}"
 
@@ -141,7 +138,7 @@
 - name: Show private cluster information
   debug:
     msg: |
-      🎉 PRIVATE EKS CLUSTER CREATED SUCCESSFULLY!
+      🎉 EKS CLUSTER CREATED SUCCESSFULLY!
       ===========================================
       Cluster: {{ eks_cluster.cluster.name }}
       Region: {{ aws_region }}
