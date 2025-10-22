@@ -118,10 +118,9 @@
     region: "{{ aws_region }}"
     version: "{{ eks_version }}"
     role_arn: "{{ eks_cluster_role_arn }}"
-    subnets: "{{ private_subnet_ids }}" # <= required by your module version
+    subnets: "{{ private_subnet_ids }}"
     security_groups:
-      - "{{ eks_controlplane_sg_id }}" # <= required by your module version
-    logging: "{{ cluster_logging }}"
+      - "{{ eks_controlplane_sg_id }}"
     tags: "{{ eks_cluster_tags }}"
     wait: true
     wait_timeout: "{{ cluster_create_timeout }}"
