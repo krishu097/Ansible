@@ -1,42 +1,30 @@
 ---
-# AWS Region
-aws_region: "us-east-2"
+# ────────────────────────────────────────────────
+# Environment and Region Settings
+# ────────────────────────────────────────────────
+aws_region: "us-east-1"
 
-# VPC CIDR (needed for worker node security group rules)
-vpc_cidr: "10.0.0.0/16"
-
-# Security Group Configuration
+# ────────────────────────────────────────────────
+# Security Group Naming
+# ────────────────────────────────────────────────
 eks_controlplane_sg_name: "eks-controlplane-{{ env_name }}"
 eks_workernodes_sg_name: "eks-workernodes-{{ env_name }}"
 
-# Security Group Rules - Control Plane
+# ────────────────────────────────────────────────
+# Control Plane SG Rules
+# ────────────────────────────────────────────────
 control_plane_rules:
   - proto: tcp
-    ports:
-      - 443
+    ports: [443]
     cidr_ip: "0.0.0.0/0"
-    rule_desc: "Allow Kubernetes API access"
+    rule_desc: "Allow Kubernetes API Access"
+  - proto: tcp
+    ports: [80]
+    cidr_ip: "0.0.0.0/0"
+    rule_desc: "Allow HTTP (Optional for Ingress or Health Checks)"
 
-# Security Group Rules - Worker Nodes
-workernodes_rules:
-  - proto: all
-    rule_desc: "Allow all traffic from Control Plane"
-    # group_id will be set dynamically
-  - proto: all
-    rule_desc: "Allow all traffic between worker nodes"
-    self: true
-  - proto: tcp
-    from_port: 1025
-    to_port: 65535
-    cidr_ip: "{{ vpc_cidr }}"
-    rule_desc: "Allow NodePort services"
-  - proto: tcp
-    from_port: 443
-    to_port: 443
-    cidr_ip: "0.0.0.0/0"
-    rule_desc: "Allow HTTPS"
-  - proto: tcp
-    from_port: 80
-    to_port: 80
-    cidr_ip: "0.0.0.0/0"
-    rule_desc: "Allow HTTP"
+# ────────────────────────────────────────────────
+# Default Worker Node Rules Template
+# (Will be dynamically updated at runtime)
+# ────────────────────────────────────────────────
+workernodes_rules: []

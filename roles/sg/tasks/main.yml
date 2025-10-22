@@ -16,7 +16,7 @@
   set_fact:
     vpc_id: "{{ vpc_info.vpcs[0].id }}"
 
-# Create EKS Control Plane SG
+# --- Create Control Plane SG ---
 - name: Create EKS Control Plane Security Group
   amazon.aws.ec2_security_group:
     name: "{{ eks_controlplane_sg_name }}"
@@ -30,22 +30,30 @@
       ManagedBy: "ansible"
   register: eks_controlplane_sg
 
-# Fix: Safely inject control plane SG ID into worker node rules
+# --- Build Worker Node Rules Dynamically ---
 - name: Build worker node rules list dynamically
   set_fact:
-    workernodes_rules_with_sg: >-
-      {{
-        workernodes_rules | map('combine', {
-          'group_id': eks_controlplane_sg.group_id if 'controlplane' in item_desc.rule_desc|lower else omit
-        }) | list
-      }}
-  vars:
-    item_desc: "{{ item }}"
-  loop: "{{ workernodes_rules }}"
-  loop_control:
-    label: "{{ item.rule_desc }}"
+    workernodes_rules:
+      - proto: all
+        group_id: "{{ eks_controlplane_sg.group_id }}"
+        rule_desc: "Allow all traffic from Control Plane"
+      - proto: all
+        self: true
+        rule_desc: "Allow all traffic between worker nodes"
+      - proto: tcp
+        ports: [1025, 65535]
+        cidr_ip: "{{ vpc_info.vpcs[0].cidr_block }}"
+        rule_desc: "Allow NodePort services"
+      - proto: tcp
+        ports: [443]
+        cidr_ip: "0.0.0.0/0"
+        rule_desc: "Allow HTTPS"
+      - proto: tcp
+        ports: [80]
+        cidr_ip: "0.0.0.0/0"
+        rule_desc: "Allow HTTP"
 
-# Create EKS Worker Node SG
+# --- Create Worker Node SG ---
 - name: Create EKS Worker Node Security Group
   amazon.aws.ec2_security_group:
     name: "{{ eks_workernodes_sg_name }}"
@@ -59,6 +67,7 @@
       ManagedBy: "ansible"
   register: eks_workernodes_sg
 
+# --- Debug Output ---
 - name: Debug created security groups
   debug:
     msg:
