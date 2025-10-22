@@ -15,17 +15,7 @@
       "tag:Type": "private"
   register: private_subnets_info
 
-- name: Get existing EKS Cluster Role (Control Plane)
-  amazon.aws.iam_role_info:
-    name: "eks-cluster-role"
-  register: cluster_role_info
-
-- name: Get existing EKS Node Group Role (Worker Nodes)
-  amazon.aws.iam_role_info:
-    name: "eks-nodegroup-role"
-  register: nodegroup_role_info
-
-- name: Get existing EKS Control Plane Security Group
+- name: Gather existing EKS Control Plane Security Group
   amazon.aws.ec2_security_group_info:
     region: "{{ aws_region }}"
     filters:
@@ -33,7 +23,7 @@
       "tag:Environment": "{{ env_name }}"
   register: control_plane_sg_info
 
-- name: Get existing EKS Worker Nodes Security Group
+- name: Gather existing EKS Worker Nodes Security Group
   amazon.aws.ec2_security_group_info:
     region: "{{ aws_region }}"
     filters:
@@ -41,12 +31,64 @@
       "tag:Environment": "{{ env_name }}"
   register: worker_nodes_sg_info
 
+###########################################
+# Create or gather IAM Roles
+###########################################
+- name: Get existing EKS Cluster Role
+  amazon.aws.iam_role_info:
+    name: "eks-cluster-role"
+  register: cluster_role_info
+  ignore_errors: true
+
+- name: Create EKS Cluster Role if missing
+  amazon.aws.iam_role:
+    name: "eks-cluster-role"
+    description: "IAM role for EKS cluster"
+    assume_role_policy_document: "{{ eks_cluster_trust_policy | to_json }}"
+    managed_policies: "{{ eks_cluster_managed_policies }}"
+  register: cluster_role
+  when: cluster_role_info.iam_roles is not defined or cluster_role_info.iam_roles | length == 0
+
+- name: Set Cluster Role ARN
+  set_fact:
+    cluster_role_arn: >-
+      {% if cluster_role_info.iam_roles is defined and cluster_role_info.iam_roles | length > 0 %}
+        {{ cluster_role_info.iam_roles[0].arn }}
+      {% else %}
+        {{ cluster_role.iam_role.arn }}
+      {% endif %}
+
+- name: Get existing EKS Node Group Role
+  amazon.aws.iam_role_info:
+    name: "eks-nodegroup-role"
+  register: nodegroup_role_info
+  ignore_errors: true
+
+- name: Create EKS Node Group Role if missing
+  amazon.aws.iam_role:
+    name: "eks-nodegroup-role"
+    description: "IAM role for EKS worker nodes"
+    assume_role_policy_document: "{{ eks_nodegroup_trust_policy | to_json }}"
+    managed_policies: "{{ eks_nodegroup_managed_policies }}"
+  register: nodegroup_role
+  when: nodegroup_role_info.iam_roles is not defined or nodegroup_role_info.iam_roles | length == 0
+
+- name: Set Node Group Role ARN
+  set_fact:
+    nodegroup_role_arn: >-
+      {% if nodegroup_role_info.iam_roles is defined and nodegroup_role_info.iam_roles | length > 0 %}
+        {{ nodegroup_role_info.iam_roles[0].arn }}
+      {% else %}
+        {{ nodegroup_role.iam_role.arn }}
+      {% endif %}
+
+###########################################
+# Set other facts
+###########################################
 - name: Set facts for EKS configuration
   set_fact:
     vpc_id: "{{ vpc_info.vpcs[0].id }}"
     private_subnet_ids: "{{ private_subnets_info.subnets | map(attribute='id') | list }}"
-    cluster_role_arn: "{{ cluster_role_info.iam_roles[0].arn }}"
-    nodegroup_role_arn: "{{ nodegroup_role_info.iam_roles[0].arn }}"
     control_plane_sg_id: "{{ control_plane_sg_info.security_groups[0].group_id }}"
     worker_nodes_sg_id: "{{ worker_nodes_sg_info.security_groups[0].group_id }}"
 
@@ -61,30 +103,10 @@
       - Control Plane SG: {{ control_plane_sg_id }}
       - Worker Nodes SG: {{ worker_nodes_sg_id }}
 
-- name: Validate all resources exist
-  block:
-    - name: Validate private subnets exist
-      fail:
-        msg: "No private subnets found for environment '{{ env_name }}'. Cannot deploy EKS cluster."
-      when: private_subnet_ids | length == 0
-
-    - name: Validate IAM roles exist
-      fail:
-        msg: |
-          Missing IAM roles for EKS cluster:
-          - Cluster Role: {{ cluster_role_info.iam_roles | length > 0 }}
-          - Node Group Role: {{ nodegroup_role_info.iam_roles | length > 0 }}
-      when: cluster_role_info.iam_roles | length == 0 or nodegroup_role_info.iam_roles | length == 0
-
-    - name: Validate security groups exist
-      fail:
-        msg: |
-          Missing security groups for EKS cluster:
-          - Control Plane SG: {{ control_plane_sg_info.security_groups | length > 0 }}
-          - Worker Nodes SG: {{ worker_nodes_sg_info.security_groups | length > 0 }}
-      when: control_plane_sg_info.security_groups | length == 0 or worker_nodes_sg_info.security_groups | length == 0
-
-- name: Create EKS Cluster using community.aws.eks_cluster
+###########################################
+# Create EKS Cluster
+###########################################
+- name: Create EKS Cluster
   community.aws.eks_cluster:
     name: "{{ eks_cluster_name }}"
     version: "{{ eks_version }}"
@@ -97,7 +119,10 @@
     wait_timeout: "{{ cluster_create_timeout }}"
   register: eks_cluster
 
-- name: Create EKS Node Group using community.aws.eks_nodegroup
+###########################################
+# Create Node Group
+###########################################
+- name: Create EKS Node Group
   community.aws.eks_nodegroup:
     name: "{{ nodegroup_name }}"
     cluster_name: "{{ eks_cluster_name }}"
