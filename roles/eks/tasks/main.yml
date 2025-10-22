@@ -25,6 +25,18 @@
     name: "eks-nodegroup-role"
   register: nodegroup_role_info
 
+- name: Verify Node Group Role has required policies
+  amazon.aws.iam_managed_policy:
+    policy_arn: "{{ item }}"
+    iam_type: role
+    iam_name: "eks-nodegroup-role"
+    state: present
+  loop:
+    - "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy"
+    - "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy"
+    - "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
+    - "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+
 - name: Get existing EKS Control Plane Security Group
   amazon.aws.ec2_security_group_info:
     region: "{{ aws_region }}"
@@ -45,10 +57,10 @@
   set_fact:
     vpc_id: "{{ vpc_info.vpcs[0].id }}"
     private_subnet_ids: "{{ private_subnets_info.subnets | map(attribute='id') | list }}"
-    cluster_role_arn: "{{ cluster_role_info.iam_roles[0].arn }}" # ADDED
+    cluster_role_arn: "{{ cluster_role_info.iam_roles[0].arn }}"
     nodegroup_role_arn: "{{ nodegroup_role_info.iam_roles[0].arn }}"
-    control_plane_sg_id: "{{ control_plane_sg_info.security_groups[0].group_id }}" # ADDED
-    worker_nodes_sg_id: "{{ worker_nodes_sg_info.security_groups[0].group_id }}" # ADDED
+    control_plane_sg_id: "{{ control_plane_sg_info.security_groups[0].group_id }}"
+    worker_nodes_sg_id: "{{ worker_nodes_sg_info.security_groups[0].group_id }}"
 
 - name: Debug all existing resources
   debug:
@@ -56,13 +68,10 @@
       🔗 USING EXISTING ANSIBLE RESOURCES:
       - VPC: {{ vpc_id }}
       - Private Subnets: {{ private_subnet_ids }}
-      - Private Subnet Count: {{ private_subnet_ids | length }}
       - Cluster Role ARN: {{ cluster_role_arn }}
       - Node Role ARN: {{ nodegroup_role_arn }}
       - Control Plane SG: {{ control_plane_sg_id }}
       - Worker Nodes SG: {{ worker_nodes_sg_id }}
-      - Private Endpoint Only: true
-      - Public Endpoint: false
 
 - name: Validate all resources exist
   block:
@@ -91,22 +100,30 @@
   community.aws.eks_cluster:
     name: "{{ eks_cluster_name }}"
     version: "{{ eks_version }}"
-    role_arn: "{{ cluster_role_arn }}" # Uses your existing cluster role
-    subnets: "{{ private_subnet_ids }}" # Uses your existing private subnets
-    security_groups: # Uses your existing control plane SG
+    role_arn: "{{ cluster_role_arn }}"
+    subnets: "{{ private_subnet_ids }}"
+    security_groups:
       - "{{ control_plane_sg_id }}"
     tags: "{{ eks_cluster_tags }}"
     wait: true
     wait_timeout: "{{ cluster_create_timeout }}"
   register: eks_cluster
 
+- name: Verify cluster is active before creating nodegroup
+  amazon.aws.eks_cluster_info:
+    name: "{{ eks_cluster_name }}"
+  register: cluster_status
+  until: cluster_status.clusters[0].status == 'ACTIVE'
+  retries: 30
+  delay: 30
+
 - name: Create EKS Node Group using community.aws.eks_nodegroup
   community.aws.eks_nodegroup:
     name: "{{ nodegroup_name }}"
     cluster_name: "{{ eks_cluster_name }}"
     state: present
-    node_role: "{{ nodegroup_role_arn }}" # Uses your existing node group role
-    subnets: "{{ private_subnet_ids }}" # Uses your existing private subnets
+    node_role: "{{ nodegroup_role_arn }}"
+    subnets: "{{ private_subnet_ids }}"
     scaling_config:
       min_size: "{{ nodegroup_min_size }}"
       max_size: "{{ nodegroup_max_size }}"
@@ -115,10 +132,25 @@
     instance_types: "{{ nodegroup_instance_types }}"
     ami_type: "{{ nodegroup_ami_type }}"
     capacity_type: "{{ nodegroup_capacity_type }}"
-
+    tags: "{{ nodegroup_tags }}"
     wait: true
     wait_timeout: "{{ nodegroup_create_timeout }}"
   register: eks_nodegroup
+
+- name: Check nodegroup status after creation
+  amazon.aws.eks_nodegroup_info:
+    cluster_name: "{{ eks_cluster_name }}"
+    name: "{{ nodegroup_name }}"
+  register: nodegroup_status
+  when: eks_nodegroup is changed or eks_nodegroup is failed
+
+- name: Show nodegroup health if issues
+  debug:
+    msg: |
+      Nodegroup Health Issues:
+      {{ nodegroup_status.nodegroups[0].health.issues | default('No health issues') }}
+      Nodegroup Status: {{ nodegroup_status.nodegroups[0].status | default('UNKNOWN') }}
+  when: nodegroup_status.nodegroups | length > 0 and nodegroup_status.nodegroups[0].health.issues | length > 0
 
 - name: Update kubeconfig for private cluster
   ansible.builtin.shell:
@@ -130,35 +162,18 @@
   environment:
     AWS_DEFAULT_REGION: "{{ aws_region }}"
 
-- name: Verify cluster access from private network
+- name: Verify cluster access
   ansible.builtin.shell:
     cmd: "kubectl get nodes -o wide"
   register: kubectl_nodes
 
-- name: Show private cluster information
+- name: Show cluster information
   debug:
     msg: |
       🎉 EKS CLUSTER CREATED SUCCESSFULLY!
       ===========================================
       Cluster: {{ eks_cluster.cluster.name }}
       Region: {{ aws_region }}
-      VPC: {{ vpc_id }}
-      Deployment: Private Subnets Only
 
-      🔧 RESOURCES USED:
-      - VPC: {{ vpc_id }}
-      - Private Subnets: {{ private_subnet_ids | length }}
-      - Cluster IAM Role: {{ cluster_role_arn }}
-      - Node Group IAM Role: {{ nodegroup_role_arn }}
-      - Control Plane SG: {{ control_plane_sg_id }}
-      - Worker Nodes SG: {{ worker_nodes_sg_id }}
-
-      Worker Nodes (in private subnets):
+      Worker Nodes:
       {{ kubectl_nodes.stdout }}
-
-      🔒 Security Features:
-      - API Server: Private Endpoint Only
-      - Worker Nodes: Private Subnets Only  
-      - Custom Security Groups: Using pre-configured SGs
-      - No Public Internet Access
-      - NAT Gateway Required for Outbound
