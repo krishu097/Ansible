@@ -29,6 +29,8 @@
     map_public: true
     tags:
       Name: "subnet-{{ env_name }}-public-{{ item.az }}"
+      kubernetes.io/cluster/{{ eks_cluster_name }}: "shared"
+      kubernetes.io/role/internal-elb: "1"
       Environment: "{{ env_name }}"
       Type: "public"
   loop: "{{ vpc_public_subnets }}"
@@ -43,6 +45,8 @@
     map_public: false
     tags:
       Name: "subnet-{{ env_name }}-private-{{ item.az }}"
+      kubernetes.io/cluster/{{ eks_cluster_name }}: "shared"
+      kubernetes.io/role/internal-elb: "1"
       Environment: "{{ env_name }}"
       Type: "private"
   loop: "{{ vpc_private_subnets }}"
