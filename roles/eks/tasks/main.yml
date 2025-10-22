@@ -97,23 +97,6 @@
     wait_timeout: "{{ cluster_create_timeout }}"
   register: eks_cluster
 
-- name: Verify EKS cluster is active before creating nodegroup
-  community.aws.eks_cluster:
-    name: "{{ eks_cluster_name }}"
-    state: present
-    wait: true
-  register: cluster_status
-
-# - name: Verify EKS cluster is active before creating nodegroup
-#   community.aws.eks_cluster:
-#     name: "{{ eks_cluster_name }}"
-#     state: present
-#     wait: true
-#   register: cluster_status
-#   until: cluster_status.eks_cluster.status == 'ACTIVE'
-#   retries: 30
-#   delay: 30
-
 - name: Create EKS Node Group using community.aws.eks_nodegroup
   community.aws.eks_nodegroup:
     name: "{{ nodegroup_name }}"
