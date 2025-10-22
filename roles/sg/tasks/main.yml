@@ -16,6 +16,7 @@
   set_fact:
     vpc_id: "{{ vpc_info.vpcs[0].id }}"
 
+# Create EKS Control Plane SG
 - name: Create EKS Control Plane Security Group
   amazon.aws.ec2_security_group:
     name: "{{ eks_controlplane_sg_name }}"
@@ -29,20 +30,29 @@
       ManagedBy: "ansible"
   register: eks_controlplane_sg
 
-- name: Update workernodes rules with control plane SG ID
+# Fix: Safely inject control plane SG ID into worker node rules
+- name: Build worker node rules list dynamically
   set_fact:
-    workernodes_rules_with_sg: |
-      {% set rules = workernodes_rules %}
-      {% set _ = rules[0].update({'group_id': eks_controlplane_sg.group_id}) %}
-      {{ rules }}
+    workernodes_rules_with_sg: >-
+      {{
+        workernodes_rules | map('combine', {
+          'group_id': eks_controlplane_sg.group_id if 'controlplane' in item_desc.rule_desc|lower else omit
+        }) | list
+      }}
+  vars:
+    item_desc: "{{ item }}"
+  loop: "{{ workernodes_rules }}"
+  loop_control:
+    label: "{{ item.rule_desc }}"
 
+# Create EKS Worker Node SG
 - name: Create EKS Worker Node Security Group
   amazon.aws.ec2_security_group:
     name: "{{ eks_workernodes_sg_name }}"
     description: "EKS Worker Nodes Security Group"
     vpc_id: "{{ vpc_id }}"
     region: "{{ aws_region }}"
-    rules: "{{ workernodes_rules_with_sg }}"
+    rules: "{{ workernodes_rules }}"
     tags:
       Name: "{{ eks_workernodes_sg_name }}"
       Environment: "{{ env_name }}"
