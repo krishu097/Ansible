@@ -1,20 +1,31 @@
 ---
+# 1) Create EKS Cluster IAM Role
 - name: Create EKS Cluster Role
   amazon.aws.iam_role:
-    name: "eks-cluster-role"
-    description: "IAM role for EKS cluster"
+    name: "{{ eks_cluster_role_name }}"
+    description: "IAM Role for EKS Cluster - {{ env_name }}"
     assume_role_policy_document: "{{ eks_cluster_trust_policy | to_json }}"
     managed_policies: "{{ eks_cluster_managed_policies }}"
     tags:
       Environment: "{{ env_name }}"
+      ManagedBy: "ansible"
   register: eks_cluster_role
 
+# 2) Create EKS Node Group IAM Role
 - name: Create EKS Node Group Role
   amazon.aws.iam_role:
-    name: "eks-nodegroup-role"
-    description: "IAM role for EKS worker nodes"
+    name: "{{ eks_nodegroup_role_name }}"
+    description: "IAM Role for EKS Worker Nodes - {{ env_name }}"
     assume_role_policy_document: "{{ eks_nodegroup_trust_policy | to_json }}"
     managed_policies: "{{ eks_nodegroup_managed_policies }}"
     tags:
       Environment: "{{ env_name }}"
+      ManagedBy: "ansible"
   register: eks_nodegroup_role
+
+# 3) Debug the created IAM Roles
+- name: Debug created IAM role ARNs
+  debug:
+    msg:
+      - "EKS Cluster Role ARN: {{ eks_cluster_role.role.arn }}"
+      - "EKS Node Group Role ARN: {{ eks_nodegroup_role.role.arn }}"

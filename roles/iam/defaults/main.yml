@@ -1,17 +1,21 @@
 ---
-# EKS Cluster IAM Role Configuration
+# IAM Role Names (unique per environment)
+eks_cluster_role_name: "eks-cluster-role-{{ env_name }}"
+eks_nodegroup_role_name: "eks-nodegroup-role-{{ env_name }}"
+
+# ====== EKS Cluster IAM Role Configuration ======
 eks_cluster_managed_policies:
   - "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy"
   - "arn:aws:iam::aws:policy/AmazonEKSVPCResourceController"
 
-# EKS Node Group IAM Role Configuration
+# ====== EKS Node Group IAM Role Configuration ======
 eks_nodegroup_managed_policies:
   - "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy"
   - "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy"
   - "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
   - "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
 
-# Trust policy for EKS Cluster Role
+# ====== Trust Policy Documents ======
 eks_cluster_trust_policy:
   Version: "2012-10-17"
   Statement:
@@ -20,7 +24,6 @@ eks_cluster_trust_policy:
         Service: "eks.amazonaws.com"
       Action: "sts:AssumeRole"
 
-# Trust policy for EKS Node Group Role
 eks_nodegroup_trust_policy:
   Version: "2012-10-17"
   Statement:
