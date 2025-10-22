@@ -95,15 +95,23 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install ansible boto3 botocore
-          ansible-galaxy collection install amazon.aws
-          ansible-galaxy collection install community.aws
+          python3 -m pip install --upgrade pip
+          pip install --upgrade \
+            ansible \
+            boto3 \
+            botocore \
+            requests \
+            jmespath
+          ansible-galaxy collection install \
+            amazon.aws:>=7.0.0 \
+            community.aws:>=7.0.0 \
+            community.general:>=8.0.0s
 
       - name: Deploy Infrastructure
         if: inputs.action == 'deploy'
         run: |
           ansible-playbook site.yml \
-            -e "environment=${{ inputs.environment }}" \
+            -e "env_name=${{ inputs.environment }}" \
             -e "aws_region=${{ vars.AWS_REGION }}" \
             -e "git_commit=${{ github.sha }}" \
             -e "git_branch=main"
@@ -112,7 +120,7 @@ jobs:
         if: inputs.action == 'destroy'
         run: |
           ansible-playbook cleanup.yml \
-            -e "environment=${{ inputs.environment }}" \
+            -e "env_name=${{ inputs.environment }}" \
             -e "aws_region=${{ vars.AWS_REGION }}"
 
       - name: Run Tests

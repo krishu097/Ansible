@@ -170,7 +170,7 @@
   set_fact:
     eks_controlplane_sg_id: "{{ eks_controlplane_sg_id }}"
     eks_workernodes_sg_id: "{{ eks_workernodes_sg_id }}"
-  cacheable: true
+    cacheable: true
 
 # 8) Debug
 - name: Debug created security groups
