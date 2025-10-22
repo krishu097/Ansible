@@ -1,21 +1,28 @@
 ---
-# IAM Role Names (unique per environment)
-eks_cluster_role_name: "eks-cluster-role-{{ env_name }}"
-eks_nodegroup_role_name: "eks-nodegroup-role-{{ env_name }}"
+# Toggle this if you want names like eks-cluster-role-uat-edfx
+use_suffix: false
 
-# ====== EKS Cluster IAM Role Configuration ======
+# Effective role names (unsuffixed by default)
+eks_cluster_role_name: >-
+  {{ (use_suffix | bool)
+      | ternary('eks-cluster-role-' ~ env_name, 'eks-cluster-role') }}
+
+eks_nodegroup_role_name: >-
+  {{ (use_suffix | bool)
+      | ternary('eks-nodegroup-role-' ~ env_name, 'eks-nodegroup-role') }}
+
+# Managed policies
 eks_cluster_managed_policies:
   - "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy"
   - "arn:aws:iam::aws:policy/AmazonEKSVPCResourceController"
 
-# ====== EKS Node Group IAM Role Configuration ======
 eks_nodegroup_managed_policies:
   - "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy"
   - "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy"
   - "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
-  - "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+  - "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore" # for Session Manager
 
-# ====== Trust Policy Documents ======
+# Trust policies
 eks_cluster_trust_policy:
   Version: "2012-10-17"
   Statement:
