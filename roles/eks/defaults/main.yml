@@ -16,7 +16,7 @@ nodegroup_capacity_type: "ON_DEMAND"
 
 # Timeouts (in seconds)
 cluster_create_timeout: 1200 # 20 minutes
-nodegroup_create_timeout: 1800 # 20 minutes
+nodegroup_create_timeout: 3600 # 30 minutes
 
 # Tags
 eks_cluster_tags:
