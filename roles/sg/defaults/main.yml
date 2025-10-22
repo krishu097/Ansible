@@ -1,30 +1,18 @@
 ---
-# ────────────────────────────────────────────────
-# Environment and Region Settings
-# ────────────────────────────────────────────────
-aws_region: "us-east-1"
+aws_region: us-east-2
+env_name: uat-edfx # will be overridden by your playbook
+vpc_cidr: "10.0.0.0/16"
 
-# ────────────────────────────────────────────────
-# Security Group Naming
-# ────────────────────────────────────────────────
+# SG names derived only from env_name
 eks_controlplane_sg_name: "eks-controlplane-{{ env_name }}"
 eks_workernodes_sg_name: "eks-workernodes-{{ env_name }}"
 
-# ────────────────────────────────────────────────
-# Control Plane SG Rules
-# ────────────────────────────────────────────────
+# Control-plane rules (tune as needed)
 control_plane_rules:
   - proto: tcp
     ports: [443]
     cidr_ip: "0.0.0.0/0"
-    rule_desc: "Allow Kubernetes API Access"
-  - proto: tcp
-    ports: [80]
-    cidr_ip: "0.0.0.0/0"
-    rule_desc: "Allow HTTP (Optional for Ingress or Health Checks)"
-
-# ────────────────────────────────────────────────
-# Default Worker Node Rules Template
-# (Will be dynamically updated at runtime)
-# ────────────────────────────────────────────────
-workernodes_rules: []
+    rule_desc: "Allow EKS API (HTTPS) — adjust as needed"
+  - proto: all
+    cidr_ip: "{{ vpc_cidr }}"
+    rule_desc: "Allow all traffic within VPC"

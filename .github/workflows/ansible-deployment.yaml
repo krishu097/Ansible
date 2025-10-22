@@ -6,7 +6,7 @@ on:
       environment:
         description: "Environment to deploy"
         required: true
-        default: "dev-self"
+        default: "uat-edfx"
       action:
         description: "Action to perform"
         required: true
