@@ -1,40 +1,56 @@
 ---
+- name: Get VPC information by tags
+  amazon.aws.ec2_vpc_net_info:
+    region: "{{ aws_region }}"
+    filters:
+      "tag:Environment": "{{ env_name }}"
+      "tag:ManagedBy": "ansible"
+  register: vpc_info
+
+- name: Fail if VPC not found
+  fail:
+    msg: "VPC with Environment tag '{{ env_name }}' not found. Run VPC role first."
+  when: vpc_info.vpcs | length == 0
+
+- name: Set VPC ID
+  set_fact:
+    vpc_id: "{{ vpc_info.vpcs[0].id }}"
+
 - name: Create EKS Control Plane Security Group
   amazon.aws.ec2_security_group:
-    name: "eks-controlplane-{{ env_name }}"
+    name: "{{ eks_controlplane_sg_name }}"
     description: "EKS Control Plane Security Group"
     vpc_id: "{{ vpc_id }}"
     region: "{{ aws_region }}"
-    rules:
-      - proto: tcp
-        ports:
-          - 443
-        cidr_ip: "0.0.0.0/0"
-        rule_desc: "Allow Kubernetes API access"
+    rules: "{{ control_plane_rules }}"
     tags:
-      Name: "eks-controlplane-{{ env_name }}"
+      Name: "{{ eks_controlplane_sg_name }}"
       Environment: "{{ env_name }}"
+      ManagedBy: "ansible"
   register: eks_controlplane_sg
+
+- name: Update workernodes rules with control plane SG ID
+  set_fact:
+    workernodes_rules_with_sg: |
+      {% set rules = workernodes_rules %}
+      {% set _ = rules[0].update({'group_id': eks_controlplane_sg.group_id}) %}
+      {{ rules }}
 
 - name: Create EKS Worker Node Security Group
   amazon.aws.ec2_security_group:
-    name: "eks-workernodes-{{ env_name }}"
+    name: "{{ eks_workernodes_sg_name }}"
     description: "EKS Worker Nodes Security Group"
     vpc_id: "{{ vpc_id }}"
     region: "{{ aws_region }}"
-    rules:
-      - proto: all
-        group_id: "{{ eks_controlplane_sg.group_id }}"
-        rule_desc: "Allow all traffic from Control Plane"
-      - proto: all
-        rule_desc: "Allow all traffic between worker nodes"
-        self: true
-      - proto: tcp
-        from_port: 1025
-        to_port: 65535
-        cidr_ip: "{{ vpc_cidr }}"
-        rule_desc: "Allow NodePort services"
+    rules: "{{ workernodes_rules_with_sg }}"
     tags:
-      Name: "eks-workernodes-{{ env_name }}"
+      Name: "{{ eks_workernodes_sg_name }}"
       Environment: "{{ env_name }}"
+      ManagedBy: "ansible"
   register: eks_workernodes_sg
+
+- name: Debug created security groups
+  debug:
+    msg:
+      - "Control Plane SG: {{ eks_controlplane_sg.group_id }}"
+      - "Worker Nodes SG: {{ eks_workernodes_sg.group_id }}"

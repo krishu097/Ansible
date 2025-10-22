@@ -7,7 +7,6 @@
     tags:
       Environment: "{{ env_name }}"
       Project: "ansible-cicd"
-      GitCommit: "{{ git_commit | default('unknown') }}"
       ManagedBy: "ansible"
   register: vpc_result
 
@@ -88,3 +87,11 @@
     state: present
     region: "{{ aws_region }}"
   when: create_nat_gateway | default(true) | bool and private_route_table is defined
+
+- name: Set VPC ID as fact
+  set_fact:
+    vpc_id: "{{ vpc_result.vpc.id }}"
+
+- name: Set private subnet IDs as fact
+  set_fact:
+    private_subnet_ids: "{{ private_subnets_result.results | map(attribute='subnet.id') | list }}"
