@@ -101,11 +101,19 @@
   community.aws.eks_cluster:
     name: "{{ eks_cluster_name }}"
     state: present
-    wait: false
+    wait: true
   register: cluster_status
-  until: cluster_status.status == 'ACTIVE'
-  retries: 30
-  delay: 30
+  until: cluster_status.eks_cluster.status == 'ACTIVE'
+
+# - name: Verify EKS cluster is active before creating nodegroup
+#   community.aws.eks_cluster:
+#     name: "{{ eks_cluster_name }}"
+#     state: present
+#     wait: true
+#   register: cluster_status
+#   until: cluster_status.eks_cluster.status == 'ACTIVE'
+#   retries: 30
+#   delay: 30
 
 - name: Create EKS Node Group using community.aws.eks_nodegroup
   community.aws.eks_nodegroup:
