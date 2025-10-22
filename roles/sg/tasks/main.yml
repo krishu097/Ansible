@@ -3,33 +3,38 @@
   amazon.aws.ec2_security_group:
     name: "eks-controlplane-{{ env_name }}"
     description: "EKS Control Plane Security Group"
-    vpc_id: "{{ vpc_result.vpc.id }}"
+    vpc_id: "{{ vpc_id }}"
     region: "{{ aws_region }}"
     rules:
       - proto: tcp
         ports:
           - 443
         cidr_ip: "0.0.0.0/0"
-        rule_desc: "Kubernetes API"
+        rule_desc: "Allow Kubernetes API access"
     tags:
-      Environment: "{{ env_name }}"
       Name: "eks-controlplane-{{ env_name }}"
+      Environment: "{{ env_name }}"
   register: eks_controlplane_sg
 
 - name: Create EKS Worker Node Security Group
   amazon.aws.ec2_security_group:
     name: "eks-workernodes-{{ env_name }}"
     description: "EKS Worker Nodes Security Group"
-    vpc_id: "{{ vpc_result.vpc.id }}"
+    vpc_id: "{{ vpc_id }}"
     region: "{{ aws_region }}"
     rules:
       - proto: all
-        group_name: "eks-controlplane-{{ env_name }}"
-        rule_desc: "Allow all from control plane"
+        group_id: "{{ eks_controlplane_sg.group_id }}"
+        rule_desc: "Allow all traffic from Control Plane"
       - proto: all
-        group_name: "eks-workernodes-{{ env_name }}"
-        rule_desc: "Allow all between worker nodes"
+        rule_desc: "Allow all traffic between worker nodes"
+        self: true
+      - proto: tcp
+        from_port: 1025
+        to_port: 65535
+        cidr_ip: "{{ vpc_cidr }}"
+        rule_desc: "Allow NodePort services"
     tags:
-      Environment: "{{ env_name }}"
       Name: "eks-workernodes-{{ env_name }}"
+      Environment: "{{ env_name }}"
   register: eks_workernodes_sg
