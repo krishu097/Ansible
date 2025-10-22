@@ -38,16 +38,16 @@
     description: "EKS Worker Nodes Security Group"
     vpc_id: "{{ vpc_id }}"
     region: "{{ aws_region }}"
-    # Only rules that don't need the worker SG ID yet
+    purge_rules: no
     rules:
       - proto: all
         group_id: "{{ eks_controlplane_sg.group_id }}"
         rule_desc: "Allow all from control plane"
       - proto: tcp
-        # If you actually want a range, prefer from_port/to_port; keeping as-is for parity:
-        ports: [1025, 65535]
+        from_port: 30000
+        to_port: 32767
         cidr_ip: "{{ vpc_cidr }}"
-        rule_desc: "NodePort services"
+        rule_desc: "K8s NodePort range"
       - proto: tcp
         ports: [443]
         cidr_ip: "0.0.0.0/0"
@@ -62,13 +62,24 @@
       ManagedBy: "ansible"
   register: eks_workernodes_sg
 
+# --- Wait for eventual consistency (SG must be visible before we modify it) ---
+- name: Wait until worker SG is discoverable
+  amazon.aws.ec2_security_group_info:
+    region: "{{ aws_region }}"
+    filters:
+      group-id: "{{ eks_workernodes_sg.group_id }}"
+  register: sg_lookup
+  retries: 6
+  delay: 5
+  until: sg_lookup.security_groups | length > 0
+
 # --- Add self-referencing rule after SG exists ---
 - name: Allow all between worker nodes (self)
   amazon.aws.ec2_security_group:
-    name: "{{ eks_workernodes_sg_name }}"
+    group_id: "{{ eks_workernodes_sg.group_id }}"
     vpc_id: "{{ vpc_id }}"
     region: "{{ aws_region }}"
-    # Append just this rule; purge_rules defaults to false (doesn't remove others)
+    purge_rules: no
     rules:
       - proto: all
         group_id: "{{ eks_workernodes_sg.group_id }}"
