@@ -31,36 +31,35 @@
   register: eks_controlplane_sg
 
 # --- Build Worker Node Rules Dynamically ---
-- name: Build worker node rules list dynamically
+- name: Set worker node SG rules dynamically
   set_fact:
-    workernodes_rules:
+    worker_rules_final:
       - proto: all
         group_id: "{{ eks_controlplane_sg.group_id }}"
-        rule_desc: "Allow all traffic from Control Plane"
+        rule_desc: "Allow all from control plane"
       - proto: all
-        self: true
-        rule_desc: "Allow all traffic between worker nodes"
+        group_id: "{{ eks_workernodes_sg.group_id | default(omit) }}"
+        rule_desc: "Allow all between worker nodes"
       - proto: tcp
         ports: [1025, 65535]
-        cidr_ip: "{{ vpc_info.vpcs[0].cidr_block }}"
-        rule_desc: "Allow NodePort services"
+        cidr_ip: "{{ vpc_cidr }}"
+        rule_desc: "NodePort services"
       - proto: tcp
         ports: [443]
         cidr_ip: "0.0.0.0/0"
-        rule_desc: "Allow HTTPS"
+        rule_desc: "HTTPS"
       - proto: tcp
         ports: [80]
         cidr_ip: "0.0.0.0/0"
-        rule_desc: "Allow HTTP"
+        rule_desc: "HTTP"
 
-# --- Create Worker Node SG ---
 - name: Create EKS Worker Node Security Group
   amazon.aws.ec2_security_group:
     name: "{{ eks_workernodes_sg_name }}"
     description: "EKS Worker Nodes Security Group"
     vpc_id: "{{ vpc_id }}"
     region: "{{ aws_region }}"
-    rules: "{{ workernodes_rules }}"
+    rules: "{{ worker_rules_final }}"
     tags:
       Name: "{{ eks_workernodes_sg_name }}"
       Environment: "{{ env_name }}"
