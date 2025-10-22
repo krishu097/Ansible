@@ -31,16 +31,20 @@
   register: eks_controlplane_sg
 
 # --- Build Worker Node Rules Dynamically ---
-- name: Set worker node SG rules dynamically
-  set_fact:
-    worker_rules_final:
+# --- Create Worker SG (base rules only) ---
+- name: Create EKS Worker Node Security Group (base)
+  amazon.aws.ec2_security_group:
+    name: "{{ eks_workernodes_sg_name }}"
+    description: "EKS Worker Nodes Security Group"
+    vpc_id: "{{ vpc_id }}"
+    region: "{{ aws_region }}"
+    # Only rules that don't need the worker SG ID yet
+    rules:
       - proto: all
         group_id: "{{ eks_controlplane_sg.group_id }}"
         rule_desc: "Allow all from control plane"
-      - proto: all
-        group_id: "{{ eks_workernodes_sg.group_id | default(omit) }}"
-        rule_desc: "Allow all between worker nodes"
       - proto: tcp
+        # If you actually want a range, prefer from_port/to_port; keeping as-is for parity:
         ports: [1025, 65535]
         cidr_ip: "{{ vpc_cidr }}"
         rule_desc: "NodePort services"
@@ -52,19 +56,23 @@
         ports: [80]
         cidr_ip: "0.0.0.0/0"
         rule_desc: "HTTP"
-
-- name: Create EKS Worker Node Security Group
-  amazon.aws.ec2_security_group:
-    name: "{{ eks_workernodes_sg_name }}"
-    description: "EKS Worker Nodes Security Group"
-    vpc_id: "{{ vpc_id }}"
-    region: "{{ aws_region }}"
-    rules: "{{ worker_rules_final }}"
     tags:
       Name: "{{ eks_workernodes_sg_name }}"
       Environment: "{{ env_name }}"
       ManagedBy: "ansible"
   register: eks_workernodes_sg
+
+# --- Add self-referencing rule after SG exists ---
+- name: Allow all between worker nodes (self)
+  amazon.aws.ec2_security_group:
+    name: "{{ eks_workernodes_sg_name }}"
+    vpc_id: "{{ vpc_id }}"
+    region: "{{ aws_region }}"
+    # Append just this rule; purge_rules defaults to false (doesn't remove others)
+    rules:
+      - proto: all
+        group_id: "{{ eks_workernodes_sg.group_id }}"
+        rule_desc: "Allow all between worker nodes"
 
 # --- Debug Output ---
 - name: Debug created security groups
