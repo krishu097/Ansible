@@ -118,15 +118,12 @@
     region: "{{ aws_region }}"
     version: "{{ eks_version }}"
     role_arn: "{{ eks_cluster_role_arn }}"
-    resources_vpc_config:
-      subnetIds: "{{ private_subnet_ids }}"
-      securityGroupIds:
-        - "{{ eks_controlplane_sg_id }}"
-      endpointPublicAccess: "{{ endpoint_public_access }}"
-      endpointPrivateAccess: "{{ endpoint_private_access }}"
-      publicAccessCidrs: "{{ public_access_cidrs }}"
+    subnets: "{{ private_subnet_ids }}" # <= required by your module version
+    security_groups:
+      - "{{ eks_controlplane_sg_id }}" # <= required by your module version
     logging: "{{ cluster_logging }}"
     tags: "{{ eks_cluster_tags }}"
+    wait: true
     wait_timeout: "{{ cluster_create_timeout }}"
     state: present
   register: eks_cluster
