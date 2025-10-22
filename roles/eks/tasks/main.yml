@@ -163,7 +163,7 @@
     region: "{{ aws_region }}"
     cluster_name: "{{ eks_cluster_name }}"
     name: "{{ nodegroup_name }}"
-    node_role_arn: "{{ eks_nodegroup_role_arn }}"
+    node_role: "{{ eks_nodegroup_role_arn }}" # <-- use node_role (expects ARN in your version)
     subnets: "{{ private_subnet_ids }}"
     launch_template:
       name: "lt-{{ nodegroup_name }}"
