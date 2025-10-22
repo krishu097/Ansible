@@ -110,7 +110,7 @@
   register: eks_cluster
 
 - name: Verify cluster is active before creating nodegroup
-  amazon.aws.eks_cluster_info:
+  community.aws.eks_cluster_info:
     name: "{{ eks_cluster_name }}"
   register: cluster_status
   until: cluster_status.clusters[0].status == 'ACTIVE'
@@ -138,7 +138,7 @@
   register: eks_nodegroup
 
 - name: Check nodegroup status after creation
-  amazon.aws.eks_nodegroup_info:
+  community.aws.eks_nodegroup_info:
     cluster_name: "{{ eks_cluster_name }}"
     name: "{{ nodegroup_name }}"
   register: nodegroup_status
