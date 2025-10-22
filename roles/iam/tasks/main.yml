@@ -23,7 +23,12 @@
       ManagedBy: "ansible"
   register: eks_nodegroup_role
 
-# 3) Debug the created IAM Roles
+- name: Set IAM role ARNs as facts for downstream roles
+  set_fact:
+    eks_cluster_role_arn: "{{ eks_cluster_role.role.arn }}"
+    eks_nodegroup_role_arn: "{{ eks_nodegroup_role.role.arn }}"
+
+#  Debug the created IAM Roles
 - name: Debug created IAM role ARNs
   debug:
     msg:

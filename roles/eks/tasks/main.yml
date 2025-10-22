@@ -1,133 +1,49 @@
 ---
-- name: Gather existing VPC information
-  amazon.aws.ec2_vpc_net_info:
-    region: "{{ aws_region }}"
-    filters:
-      "tag:Environment": "{{ env_name }}"
-      "tag:ManagedBy": "ansible"
-  register: vpc_info
-
-- name: Gather existing private subnets
-  amazon.aws.ec2_vpc_subnet_info:
-    region: "{{ aws_region }}"
-    filters:
-      "tag:Environment": "{{ env_name }}"
-      "tag:Type": "private"
-  register: private_subnets_info
-
-- name: Gather existing EKS Control Plane Security Group
-  amazon.aws.ec2_security_group_info:
-    region: "{{ aws_region }}"
-    filters:
-      "tag:Name": "eks-controlplane-{{ env_name }}"
-      "tag:Environment": "{{ env_name }}"
-  register: control_plane_sg_info
-
-- name: Gather existing EKS Worker Nodes Security Group
-  amazon.aws.ec2_security_group_info:
-    region: "{{ aws_region }}"
-    filters:
-      "tag:Name": "eks-workernodes-{{ env_name }}"
-      "tag:Environment": "{{ env_name }}"
-  register: worker_nodes_sg_info
+# Pre-flight: make sure upstream facts exist
+- name: Assert inputs from VPC/SG/IAM roles
+  assert:
+    that:
+      - private_subnet_ids is defined
+      - private_subnet_ids | length > 0
+      - eks_controlplane_sg_id is defined
+      - eks_workernodes_sg_id is defined
+      - eks_cluster_role_arn is defined
+      - eks_nodegroup_role_arn is defined
+    fail_msg: >
+      Missing required inputs from upstream roles. Ensure 'vpc', 'sg', and 'iam'
+      run before 'eks' in the same play.
 
 ###########################################
-# Create or gather IAM Roles
+# Create / Update EKS Cluster
 ###########################################
-- name: Get existing EKS Cluster Role
-  amazon.aws.iam_role_info:
-    name: "eks-cluster-role"
-  register: cluster_role_info
-  ignore_errors: true
-
-- name: Create EKS Cluster Role if missing
-  amazon.aws.iam_role:
-    name: "eks-cluster-role"
-    description: "IAM role for EKS cluster"
-    assume_role_policy_document: "{{ eks_cluster_trust_policy | to_json }}"
-    managed_policies: "{{ eks_cluster_managed_policies }}"
-  register: cluster_role
-  when: cluster_role_info.iam_roles is not defined or cluster_role_info.iam_roles | length == 0
-
-- name: Set Cluster Role ARN
-  set_fact:
-    cluster_role_arn: >-
-      {% if cluster_role_info.iam_roles is defined and cluster_role_info.iam_roles | length > 0 %}
-        {{ cluster_role_info.iam_roles[0].arn }}
-      {% else %}
-        {{ cluster_role.iam_role.arn }}
-      {% endif %}
-
-- name: Get existing EKS Node Group Role
-  amazon.aws.iam_role_info:
-    name: "eks-nodegroup-role"
-  register: nodegroup_role_info
-  ignore_errors: true
-
-- name: Create EKS Node Group Role if missing
-  amazon.aws.iam_role:
-    name: "eks-nodegroup-role"
-    description: "IAM role for EKS worker nodes"
-    assume_role_policy_document: "{{ eks_nodegroup_trust_policy | to_json }}"
-    managed_policies: "{{ eks_nodegroup_managed_policies }}"
-  register: nodegroup_role
-  when: nodegroup_role_info.iam_roles is not defined or nodegroup_role_info.iam_roles | length == 0
-
-- name: Set Node Group Role ARN
-  set_fact:
-    nodegroup_role_arn: >-
-      {% if nodegroup_role_info.iam_roles is defined and nodegroup_role_info.iam_roles | length > 0 %}
-        {{ nodegroup_role_info.iam_roles[0].arn }}
-      {% else %}
-        {{ nodegroup_role.iam_role.arn }}
-      {% endif %}
-
-###########################################
-# Set other facts
-###########################################
-- name: Set facts for EKS configuration
-  set_fact:
-    vpc_id: "{{ vpc_info.vpcs[0].id }}"
-    private_subnet_ids: "{{ private_subnets_info.subnets | map(attribute='id') | list }}"
-    control_plane_sg_id: "{{ control_plane_sg_info.security_groups[0].group_id }}"
-    worker_nodes_sg_id: "{{ worker_nodes_sg_info.security_groups[0].group_id }}"
-
-- name: Debug all existing resources
-  debug:
-    msg: |
-      🔗 USING EXISTING ANSIBLE RESOURCES:
-      - VPC: {{ vpc_id }}
-      - Private Subnets: {{ private_subnet_ids }}
-      - Cluster Role ARN: {{ cluster_role_arn }}
-      - Node Role ARN: {{ nodegroup_role_arn }}
-      - Control Plane SG: {{ control_plane_sg_id }}
-      - Worker Nodes SG: {{ worker_nodes_sg_id }}
-
-###########################################
-# Create EKS Cluster
-###########################################
-- name: Create EKS Cluster
+- name: Create / Update EKS Cluster
   community.aws.eks_cluster:
     name: "{{ eks_cluster_name }}"
+    region: "{{ aws_region }}"
     version: "{{ eks_version }}"
-    role_arn: "{{ cluster_role_arn }}"
-    subnets: "{{ private_subnet_ids }}"
-    security_groups:
-      - "{{ control_plane_sg_id }}"
+    role_arn: "{{ eks_cluster_role_arn }}"
+    resources_vpc_config:
+      subnetIds: "{{ private_subnet_ids }}"
+      securityGroupIds:
+        - "{{ eks_controlplane_sg_id }}"
+      endpointPublicAccess: "{{ endpoint_public_access }}"
+      endpointPrivateAccess: "{{ endpoint_private_access }}"
+      publicAccessCidrs: "{{ public_access_cidrs }}"
+    logging: "{{ cluster_logging }}"
     tags: "{{ eks_cluster_tags }}"
-    wait: true
     wait_timeout: "{{ cluster_create_timeout }}"
+    state: present
   register: eks_cluster
 
 ###########################################
-# Create Node Group
+# Create / Update Managed Node Group
 ###########################################
-- name: Create EKS Node Group
+- name: Create / Update EKS Node Group
   community.aws.eks_nodegroup:
-    name: "{{ nodegroup_name }}"
+    region: "{{ aws_region }}"
     cluster_name: "{{ eks_cluster_name }}"
-    state: present
-    node_role: "{{ nodegroup_role_arn }}"
+    name: "{{ nodegroup_name }}"
+    node_role_arn: "{{ eks_nodegroup_role_arn }}"
     subnets: "{{ private_subnet_ids }}"
     scaling_config:
       min_size: "{{ nodegroup_min_size }}"
@@ -137,6 +53,22 @@
     instance_types: "{{ nodegroup_instance_types }}"
     ami_type: "{{ nodegroup_ami_type }}"
     capacity_type: "{{ nodegroup_capacity_type }}"
+    labels: "{{ nodegroup_labels }}"
+    taints: "{{ nodegroup_taints }}"
     tags: "{{ nodegroup_tags }}"
     wait: true
     wait_timeout: "{{ nodegroup_create_timeout }}"
+    state: present
+  register: eks_nodegroup
+
+# Helpful output
+- name: Debug EKS artifacts
+  debug:
+    msg:
+      - "Cluster: {{ eks_cluster_name }} / Version: {{ eks_version }}"
+      - "ControlPlane SG: {{ eks_controlplane_sg_id }}"
+      - "Worker SG: {{ eks_workernodes_sg_id }}"
+      - "Private subnets: {{ private_subnet_ids | join(', ') }}"
+      - "Cluster role: {{ eks_cluster_role_arn }}"
+      - "Nodegroup role: {{ eks_nodegroup_role_arn }}"
+      - "Nodegroup: {{ nodegroup_name }} (desired={{ nodegroup_desired_size }})"

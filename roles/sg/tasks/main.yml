@@ -160,3 +160,11 @@
     msg:
       - "Control Plane SG: {{ eks_controlplane_sg_id }}"
       - "Worker Nodes SG: {{ eks_workernodes_sg_id }}"
+
+- name: Set control plane SG id fact
+  set_fact:
+    eks_controlplane_sg_id: "{{ eks_controlplane_sg_id }}"
+
+- name: Set worker SG id fact
+  set_fact:
+    eks_workernodes_sg_id: "{{ eks_workernodes_sg_id }}"
