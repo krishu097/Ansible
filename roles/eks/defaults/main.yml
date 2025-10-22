@@ -1,13 +1,13 @@
 ---
 aws_region: us-east-2
 
-# Cluster
-eks_version: "1.30" # Make sure this version is supported in your region
+# ====== Cluster Configuration ======
+eks_version: "1.30" # Ensure supported version
 eks_cluster_name: "eks-{{ env_name }}"
 endpoint_public_access: true
 endpoint_private_access: true
 public_access_cidrs:
-  - "0.0.0.0/0" # tighten in prod
+  - "0.0.0.0/0" # restrict later in production
 
 cluster_logging:
   clusterLogging:
@@ -20,15 +20,15 @@ eks_cluster_tags:
   ManagedBy: "ansible"
   Project: "ansible-cicd"
 
-# Nodegroup
+# ====== Nodegroup Configuration ======
 nodegroup_name: "ng-{{ env_name }}"
 nodegroup_instance_types: ["t3.medium"]
 nodegroup_desired_size: 2
 nodegroup_min_size: 1
 nodegroup_max_size: 3
 nodegroup_disk_size: 20
-nodegroup_ami_type: "AL2_x86_64" # or AL2_x86_64_GPU / AL2023_x86_64_STANDARD
-nodegroup_capacity_type: "ON_DEMAND" # or SPOT
+nodegroup_ami_type: "AL2_x86_64"
+nodegroup_capacity_type: "ON_DEMAND"
 nodegroup_labels: {}
 nodegroup_taints: []
 
@@ -38,6 +38,6 @@ nodegroup_tags:
   ManagedBy: "ansible"
   Project: "ansible-cicd"
 
-# Timeouts (seconds)
-cluster_create_timeout: 1800
-nodegroup_create_timeout: 3600
+# ====== Timeouts ======
+cluster_create_timeout: 1800 # 30 min
+nodegroup_create_timeout: 3600 # 60 min

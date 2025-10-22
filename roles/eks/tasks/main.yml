@@ -1,5 +1,5 @@
 ---
-# Pre-flight: make sure upstream facts exist
+# 0) Pre-flight: make sure upstream facts exist
 - name: Assert inputs from VPC/SG/IAM roles
   assert:
     that:
@@ -14,7 +14,7 @@
       run before 'eks' in the same play.
 
 ###########################################
-# Create / Update EKS Cluster
+# 1) Create / Update EKS Cluster
 ###########################################
 - name: Create / Update EKS Cluster
   community.aws.eks_cluster:
@@ -36,7 +36,27 @@
   register: eks_cluster
 
 ###########################################
-# Create / Update Managed Node Group
+# 2) Create / Update Launch Template (attach Worker SG)
+###########################################
+- name: Create / Update Launch Template for Node Group (no SSH, Session Manager only)
+  amazon.aws.ec2_launch_template:
+    name: "lt-{{ nodegroup_name }}"
+    region: "{{ aws_region }}"
+    state: present
+    network_interfaces:
+      - device_index: 0
+        delete_on_termination: true
+        groups:
+          - "{{ eks_workernodes_sg_id }}"
+    tag_specifications:
+      - resource_type: instance
+        tags: "{{ nodegroup_tags }}"
+      - resource_type: volume
+        tags: "{{ nodegroup_tags }}"
+  register: lt_result
+
+###########################################
+# 3) Create / Update EKS Managed Node Group
 ###########################################
 - name: Create / Update EKS Node Group
   community.aws.eks_nodegroup:
@@ -45,6 +65,9 @@
     name: "{{ nodegroup_name }}"
     node_role_arn: "{{ eks_nodegroup_role_arn }}"
     subnets: "{{ private_subnet_ids }}"
+    launch_template:
+      name: "lt-{{ nodegroup_name }}"
+      version: "$Latest"
     scaling_config:
       min_size: "{{ nodegroup_min_size }}"
       max_size: "{{ nodegroup_max_size }}"
@@ -61,14 +84,16 @@
     state: present
   register: eks_nodegroup
 
-# Helpful output
-- name: Debug EKS artifacts
+###########################################
+# 4) Helpful Output
+###########################################
+- name: Debug EKS Artifacts
   debug:
     msg:
       - "Cluster: {{ eks_cluster_name }} / Version: {{ eks_version }}"
-      - "ControlPlane SG: {{ eks_controlplane_sg_id }}"
+      - "Control Plane SG: {{ eks_controlplane_sg_id }}"
       - "Worker SG: {{ eks_workernodes_sg_id }}"
-      - "Private subnets: {{ private_subnet_ids | join(', ') }}"
-      - "Cluster role: {{ eks_cluster_role_arn }}"
-      - "Nodegroup role: {{ eks_nodegroup_role_arn }}"
+      - "Private Subnets: {{ private_subnet_ids | join(', ') }}"
+      - "Cluster Role: {{ eks_cluster_role_arn }}"
+      - "Nodegroup Role: {{ eks_nodegroup_role_arn }}"
       - "Nodegroup: {{ nodegroup_name }} (desired={{ nodegroup_desired_size }})"

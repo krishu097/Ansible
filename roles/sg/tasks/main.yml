@@ -17,12 +17,13 @@
   set_fact:
     vpc_id: "{{ vpc_info.vpcs[0].id }}"
 
-# 2) Look up existing SGs by name (scoped to VPC via later calls)
+# 2) Look up existing SGs by name (scoped by VPC)
 - name: Lookup Control Plane SG by name
   amazon.aws.ec2_security_group_info:
     region: "{{ aws_region }}"
     filters:
       group-name: "{{ eks_controlplane_sg_name }}"
+      vpc-id: "{{ vpc_id }}"
   register: cp_sg_info
 
 - name: Lookup Worker SG by name
@@ -30,6 +31,7 @@
     region: "{{ aws_region }}"
     filters:
       group-name: "{{ eks_workernodes_sg_name }}"
+      vpc-id: "{{ vpc_id }}"
   register: worker_sg_info
 
 # 3) Control Plane SG — create if missing (with rules),
@@ -56,8 +58,7 @@
     description: "EKS Control Plane Security Group"
     vpc_id: "{{ vpc_id }}"
     region: "{{ aws_region }}"
-    purge_rules: no # do NOT change rules; avoids desc updates
-    # no "rules" key on purpose
+    purge_rules: no # don't pass rules; avoids description update issues
     tags:
       Name: "{{ eks_controlplane_sg_name }}"
       Environment: "{{ env_name }}"
@@ -72,6 +73,17 @@
       {{ (cp_sg_info.security_groups[0].group_id
           if cp_sg_info.security_groups | length > 0
           else eks_controlplane_sg_created.group_id) }}
+
+# Optional: wait until control-plane SG is visible (eventual consistency)
+- name: Wait until control-plane SG is discoverable
+  amazon.aws.ec2_security_group_info:
+    region: "{{ aws_region }}"
+    filters:
+      group-id: "{{ eks_controlplane_sg_id }}"
+  register: cp_wait
+  retries: 6
+  delay: 5
+  until: cp_wait.security_groups | length > 0
 
 # 4) Worker SG — create with base rules if missing; otherwise ensure properties
 - name: Create EKS Worker Node Security Group (base, first run)
@@ -112,8 +124,7 @@
     description: "EKS Worker Nodes Security Group"
     vpc_id: "{{ vpc_id }}"
     region: "{{ aws_region }}"
-    purge_rules: no # no rule updates to avoid desc update issues
-    # no "rules" key on purpose
+    purge_rules: no # no "rules" here
     tags:
       Name: "{{ eks_workernodes_sg_name }}"
       Environment: "{{ env_name }}"
@@ -145,7 +156,7 @@
   amazon.aws.ec2_security_group:
     group_id: "{{ eks_workernodes_sg_id }}" # modify existing SG by ID
     name: "{{ eks_workernodes_sg_name }}" # required by module (state=present)
-    description: "EKS Worker Nodes Security Group" # required by module (state=present)
+    description: "EKS Worker Nodes Security Group"
     vpc_id: "{{ vpc_id }}"
     region: "{{ aws_region }}"
     purge_rules: no
@@ -154,17 +165,16 @@
         group_id: "{{ eks_workernodes_sg_id }}"
         rule_desc: "Allow all between worker nodes"
 
-# 7) Debug
+# 7) Export for downstream roles
+- name: Export SG IDs as facts (cacheable)
+  set_fact:
+    eks_controlplane_sg_id: "{{ eks_controlplane_sg_id }}"
+    eks_workernodes_sg_id: "{{ eks_workernodes_sg_id }}"
+  cacheable: true
+
+# 8) Debug
 - name: Debug created security groups
   debug:
     msg:
       - "Control Plane SG: {{ eks_controlplane_sg_id }}"
       - "Worker Nodes SG: {{ eks_workernodes_sg_id }}"
-
-- name: Set control plane SG id fact
-  set_fact:
-    eks_controlplane_sg_id: "{{ eks_controlplane_sg_id }}"
-
-- name: Set worker SG id fact
-  set_fact:
-    eks_workernodes_sg_id: "{{ eks_workernodes_sg_id }}"
