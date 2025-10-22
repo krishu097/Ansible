@@ -25,18 +25,6 @@
     name: "eks-nodegroup-role"
   register: nodegroup_role_info
 
-- name: Verify Node Group Role has required policies
-  amazon.aws.iam_managed_policy:
-    policy_arn: "{{ item }}"
-    iam_type: role
-    iam_name: "eks-nodegroup-role"
-    state: present
-  loop:
-    - "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy"
-    - "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy"
-    - "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
-    - "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
-
 - name: Get existing EKS Control Plane Security Group
   amazon.aws.ec2_security_group_info:
     region: "{{ aws_region }}"
