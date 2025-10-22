@@ -135,19 +135,19 @@
     name: "lt-{{ nodegroup_name }}"
     region: "{{ aws_region }}"
     state: present
-    instance_type: "{{ nodegroup_instance_types[0] }}" # move instance type here
+    instance_type: "{{ nodegroup_instance_types[0] }}" # <- required now
     network_interfaces:
       - device_index: 0
         delete_on_termination: true
         groups:
           - "{{ eks_workernodes_sg_id }}"
-    block_device_mappings: # move disk size here
+    block_device_mappings: # optional but typical
       - device_name: /dev/xvda
         ebs:
           volume_size: "{{ nodegroup_disk_size }}"
           volume_type: gp3
           delete_on_termination: true
-    # DO NOT set image_id — let EKS pick its managed AMI (ami_type removed below)
+    # do NOT set image_id; let EKS pick the managed AMI
     tag_specifications:
       - resource_type: instance
         tags: "{{ nodegroup_tags }}"
@@ -172,7 +172,6 @@
       min_size: "{{ nodegroup_min_size }}"
       max_size: "{{ nodegroup_max_size }}"
       desired_size: "{{ nodegroup_desired_size }}"
-    # REMOVE: instance_types, disk_size, ami_type (they conflict with launch_template)
     capacity_type: "{{ nodegroup_capacity_type }}"
     labels: "{{ nodegroup_labels }}"
     taints: "{{ nodegroup_taints }}"
