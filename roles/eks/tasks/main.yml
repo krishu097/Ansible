@@ -109,11 +109,13 @@
     wait_timeout: "{{ cluster_create_timeout }}"
   register: eks_cluster
 
-- name: Verify cluster is active before creating nodegroup
-  community.aws.eks_cluster_info:
+- name: Verify EKS cluster is active before creating nodegroup
+  community.aws.eks_cluster:
     name: "{{ eks_cluster_name }}"
+    state: present
+    wait: false
   register: cluster_status
-  until: cluster_status.clusters[0].status == 'ACTIVE'
+  until: cluster_status.status == 'ACTIVE'
   retries: 30
   delay: 30
 
@@ -135,45 +137,3 @@
     tags: "{{ nodegroup_tags }}"
     wait: true
     wait_timeout: "{{ nodegroup_create_timeout }}"
-  register: eks_nodegroup
-
-- name: Check nodegroup status after creation
-  community.aws.eks_nodegroup_info:
-    cluster_name: "{{ eks_cluster_name }}"
-    name: "{{ nodegroup_name }}"
-  register: nodegroup_status
-  when: eks_nodegroup is changed or eks_nodegroup is failed
-
-- name: Show nodegroup health if issues
-  debug:
-    msg: |
-      Nodegroup Health Issues:
-      {{ nodegroup_status.nodegroups[0].health.issues | default('No health issues') }}
-      Nodegroup Status: {{ nodegroup_status.nodegroups[0].status | default('UNKNOWN') }}
-  when: nodegroup_status.nodegroups | length > 0 and nodegroup_status.nodegroups[0].health.issues | length > 0
-
-- name: Update kubeconfig for private cluster
-  ansible.builtin.shell:
-    cmd: |
-      aws eks update-kubeconfig \
-        --region {{ aws_region }} \
-        --name {{ eks_cluster_name }} \
-        --role-arn {{ cluster_role_arn }}
-  environment:
-    AWS_DEFAULT_REGION: "{{ aws_region }}"
-
-- name: Verify cluster access
-  ansible.builtin.shell:
-    cmd: "kubectl get nodes -o wide"
-  register: kubectl_nodes
-
-- name: Show cluster information
-  debug:
-    msg: |
-      🎉 EKS CLUSTER CREATED SUCCESSFULLY!
-      ===========================================
-      Cluster: {{ eks_cluster.cluster.name }}
-      Region: {{ aws_region }}
-
-      Worker Nodes:
-      {{ kubectl_nodes.stdout }}
