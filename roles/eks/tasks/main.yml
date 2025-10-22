@@ -103,7 +103,6 @@
     state: present
     wait: true
   register: cluster_status
-  until: cluster_status.eks_cluster.status == 'ACTIVE'
 
 # - name: Verify EKS cluster is active before creating nodegroup
 #   community.aws.eks_cluster:
