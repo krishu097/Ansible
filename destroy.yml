@@ -1,0 +1,73 @@
+---
+- name: Destroy EKS Infrastructure
+  hosts: localhost
+  gather_facts: false
+  vars_files:
+    - group_vars/all.yml
+  
+  tasks:
+    - name: Show destruction plan
+      debug:
+        msg: |
+          🚨 INFRASTRUCTURE DESTRUCTION PLAN 🚨
+          Environment: {{ env_name }}
+          Region: {{ aws_region }}
+          
+          Destruction Order:
+          1️⃣ EKS Cluster & Node Groups
+          2️⃣ Security Groups  
+          3️⃣ IAM Roles & Instance Profiles
+          4️⃣ VPC & Networking
+          
+          ⚠️  This action is IRREVERSIBLE!
+
+    - name: Confirm destruction
+      pause:
+        prompt: "Type 'DESTROY' to confirm infrastructure destruction"
+      register: confirmation
+      when: require_confirmation | default(true) | bool
+
+    - name: Validate confirmation
+      fail:
+        msg: "Destruction cancelled - confirmation not provided"
+      when: 
+        - require_confirmation | default(true) | bool
+        - confirmation.user_input != "DESTROY"
+
+    # Phase 1: EKS Resources
+    - name: "Phase 1: Destroy EKS Cluster"
+      include_role:
+        name: eks
+        tasks_from: cleanup
+      tags: [eks, phase1]
+
+    # Phase 2: Security Groups  
+    - name: "Phase 2: Destroy Security Groups"
+      include_role:
+        name: sg
+        tasks_from: cleanup
+      tags: [sg, phase2]
+
+    # Phase 3: IAM Resources
+    - name: "Phase 3: Destroy IAM Resources"
+      include_role:
+        name: iam
+        tasks_from: cleanup
+      tags: [iam, phase3]
+
+    # Phase 4: VPC & Networking
+    - name: "Phase 4: Destroy VPC Infrastructure"
+      include_role:
+        name: vpc
+        tasks_from: cleanup
+      tags: [vpc, phase4]
+
+    - name: Final destruction summary
+      debug:
+        msg: |
+          🎉 INFRASTRUCTURE DESTRUCTION COMPLETE! 🎉
+          
+          Environment '{{ env_name }}' has been completely destroyed.
+          All AWS resources have been removed.
+          
+          💰 This will stop all charges for these resources.

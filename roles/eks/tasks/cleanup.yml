@@ -1,0 +1,70 @@
+---
+# EKS Cleanup - Destroy in reverse order of creation
+- name: Get EKS cluster information
+  community.aws.eks_cluster:
+    name: "{{ eks_cluster_name }}"
+    region: "{{ aws_region }}"
+    state: present
+  register: eks_cluster_info
+  ignore_errors: true
+
+- name: Show EKS cluster status
+  debug:
+    msg: |
+      🔍 EKS Cluster Search Results:
+      Cluster Name: {{ eks_cluster_name }}
+      Cluster Found: {{ eks_cluster_info.cluster is defined }}
+      {% if eks_cluster_info.cluster is defined %}
+      Cluster Status: {{ eks_cluster_info.cluster.status }}
+      {% endif %}
+
+- name: Skip EKS cleanup if cluster not found
+  meta: end_play
+  when: eks_cluster_info.cluster is not defined
+
+- block:
+    # 1) Delete Node Groups first
+    - name: Get EKS node groups
+      amazon.aws.eks_nodegroup_info:
+        cluster_name: "{{ eks_cluster_name }}"
+        region: "{{ aws_region }}"
+      register: nodegroups_info
+      ignore_errors: true
+
+    - name: Delete EKS node groups
+      community.aws.eks_nodegroup:
+        cluster_name: "{{ eks_cluster_name }}"
+        name: "{{ item.nodegroup_name }}"
+        region: "{{ aws_region }}"
+        state: absent
+        wait: true
+        wait_timeout: "{{ nodegroup_delete_timeout | default(1200) }}"
+      loop: "{{ nodegroups_info.nodegroups | default([]) }}"
+      loop_control:
+        label: "{{ item.nodegroup_name }}"
+
+    # 2) Delete Launch Templates
+    - name: Delete launch template
+      amazon.aws.ec2_launch_template:
+        name: "lt-{{ nodegroup_name }}"
+        region: "{{ aws_region }}"
+        state: absent
+      ignore_errors: true
+
+    # 3) Delete EKS Cluster
+    - name: Delete EKS cluster
+      community.aws.eks_cluster:
+        name: "{{ eks_cluster_name }}"
+        region: "{{ aws_region }}"
+        state: absent
+        wait: true
+        wait_timeout: "{{ cluster_delete_timeout | default(1200) }}"
+
+    - name: Show EKS destruction summary
+      debug:
+        msg: |
+          ✅ Successfully destroyed EKS infrastructure
+          🎯 Cluster: {{ eks_cluster_name }}
+          📦 Node Groups: {{ nodegroups_info.nodegroups | default([]) | length }}
+          🚀 Launch Templates: 1
+  when: eks_cluster_info.cluster is defined

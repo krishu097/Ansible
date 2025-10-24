@@ -2,19 +2,26 @@
 - name: Cleanup AWS Infrastructure
   hosts: localhost
   gather_facts: false
+  vars_files:
+    - group_vars/all.yml
 
   tasks:
-    - name: Include cleanup tasks
-      ansible.builtin.include_role:
-        name: iam
-        tasks_from: cleanup.yml
+    - name: "Phase 1: Cleanup EKS Resources"
+      include_role:
+        name: eks
+        tasks_from: cleanup
 
-    - name: Include EKS Security Groups cleanup tasks
-      ansible.builtin.include_role:
+    - name: "Phase 2: Cleanup Security Groups"
+      include_role:
         name: sg
-        tasks_from: cleanup.yml
+        tasks_from: cleanup
 
-    - name: Include cleanup tasks
-      ansible.builtin.include_role:
+    - name: "Phase 3: Cleanup IAM Resources"
+      include_role:
+        name: iam
+        tasks_from: cleanup
+
+    - name: "Phase 4: Cleanup VPC Infrastructure"
+      include_role:
         name: vpc
-        tasks_from: cleanup.yml
+        tasks_from: cleanup

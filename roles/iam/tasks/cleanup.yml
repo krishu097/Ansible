@@ -1,11 +1,20 @@
 ---
+# 1) Delete Instance Profile first
+- name: Delete EKS nodegroup instance profile
+  amazon.aws.iam_instance_profile:
+    name: "eks_nodegroup_instance_profile_{{ env_name_safe }}"
+    state: absent
+  ignore_errors: true
+
+# 2) Get IAM roles for cleanup
 - name: Get IAM roles for cleanup
   amazon.aws.iam_role_info:
     role_name: "{{ item }}"
   loop:
-    - "eks-cluster-role"
-    - "eks-nodegroup-role"
+    - "{{ eks_cluster_role_name | default('eks-cluster-role-' ~ env_name) }}"
+    - "{{ eks_nodegroup_role_name | default('eks-nodegroup-role-' ~ env_name) }}"
   register: iam_roles_info
+  ignore_errors: true
 
 - name: Show IAM roles found
   debug:
@@ -50,11 +59,12 @@
   loop_control:
     label: "{{ item.role_name }}"
 
-- name: Show IAM roles destruction summary
+- name: Show IAM destruction summary
   debug:
     msg: |
-      ✅ Successfully destroyed IAM roles for EKS
+      ✅ Successfully destroyed IAM resources for EKS
       👤 Deleted {{ iam_roles_info.results | selectattr('roles') | map(attribute='roles') | list | flatten | length }} IAM roles
+      🔑 Deleted instance profile: eks_nodegroup_instance_profile_{{ env_name_safe }}
       📋 Roles deleted:
       {% for role in iam_roles_info.results | selectattr('roles') | map(attribute='roles') | list | flatten %}
         - {{ role.role_name }}

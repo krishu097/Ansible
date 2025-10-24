@@ -105,7 +105,7 @@ jobs:
           ansible-galaxy collection install \
             amazon.aws:>=7.0.0 \
             community.aws:>=7.0.0 \
-            community.general:>=8.0.0s
+            community.general:>=8.0.0
 
       - name: Deploy Infrastructure
         if: inputs.action == 'deploy'
@@ -127,5 +127,5 @@ jobs:
         if: inputs.action == 'deploy'
         run: |
           ansible-playbook tests.yml \
-            -e "environment=${{ inputs.environment }}" \
+            -e "env_name=${{ inputs.environment }}" \
             -e "aws_region=${{ vars.AWS_REGION }}"
