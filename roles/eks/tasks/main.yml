@@ -27,13 +27,6 @@
   template:
     src: eksctl-cluster.yaml.j2
     dest: "{{ playbook_dir }}/eksctl-cluster.yaml"
-  vars:
-    eks_version: "{{ eks_version }}"
-    nodegroup_instance_type: "{{ nodegroup_instance_types[0] }}"
-    nodegroup_desired_size: "{{ nodegroup_desired_size }}"
-    nodegroup_min_size: "{{ nodegroup_min_size }}"
-    nodegroup_max_size: "{{ nodegroup_max_size }}"
-    nodegroup_disk_size: "{{ nodegroup_disk_size }}"
 
 - name: Run eksctl to create EKS cluster
   command: eksctl create cluster -f "{{ playbook_dir }}/eksctl-cluster.yaml"
