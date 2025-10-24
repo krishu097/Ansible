@@ -2,32 +2,32 @@
 aws_region: us-east-2
 
 # ====== Cluster Configuration ======
-eks_version: "1.30" # Ensure supported version
+# Use a supported EKS version for your AWS account/region.
+eks_version: "1.30"
 eks_cluster_name: "eks-{{ env_name }}"
-endpoint_public_access: true
-endpoint_private_access: true
-public_access_cidrs:
-  - "0.0.0.0/0" # restrict later in production
 
-cluster_logging:
-  clusterLogging:
-    - types: ["api", "audit", "authenticator", "controllerManager", "scheduler"]
-      enabled: true
-
+# Cluster tags (used on both create and update)
 eks_cluster_tags:
   Environment: "{{ env_name }}"
   Name: "eks-{{ env_name }}"
   ManagedBy: "ansible"
   Project: "ansible-cicd"
 
-# ====== Nodegroup Configuration ======
+# NOTE: We no longer pass endpoint/clusterLogging via the module because the
+# installed community.aws.eks_cluster version doesn’t accept those params.
+# If you need to tweak endpoint access or logging later, do it via awscli or eksctl.
+
+# ====== Nodegroup Configuration (no Launch Template) ======
 nodegroup_name: "ng-{{ env_name }}"
+# Provide a list; the module accepts a list for instance_types.
 nodegroup_instance_types: ["t3.medium"]
 nodegroup_desired_size: 2
 nodegroup_min_size: 1
 nodegroup_max_size: 3
 nodegroup_disk_size: 20
+# Valid examples: AL2_x86_64, AL2_x86_64_GPU, BOTTLEROCKET_x86_64, AL2023_x86_64_STANDARD
 nodegroup_ami_type: "AL2_x86_64"
+# ON_DEMAND or SPOT
 nodegroup_capacity_type: "ON_DEMAND"
 nodegroup_labels: {}
 nodegroup_taints: []
