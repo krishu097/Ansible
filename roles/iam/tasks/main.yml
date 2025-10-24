@@ -34,8 +34,8 @@
 # 4) Export ARNs for downstream roles (eks)
 - name: Set IAM role ARNs as facts
   set_fact:
-    eks_cluster_role_arn: "{{ eks_cluster_role.role.arn }}"
-    eks_nodegroup_role_arn: "{{ eks_nodegroup_role.role.arn }}"
+    eks_cluster_role_arn: "{{ eks_cluster_role.arn | default(eks_cluster_role.role.arn) }}"
+    eks_nodegroup_role_arn: "{{ eks_nodegroup_role.arn | default(eks_nodegroup_role.role.arn) }}"
     eks_nodegroup_instance_profile: "eks_nodegroup_instance_profile_{{ env_name_safe }}"
     cacheable: true
 
