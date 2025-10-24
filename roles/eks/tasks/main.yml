@@ -163,35 +163,40 @@
   ################################################################################3
   # --- Resolve instance profile and use its ARN (avoids name regex problems) ---
 
-# 1) Build a sanitized fallback name (only if you didn't export one from IAM)
-- name: Normalize env name for fallback profile
+# Decide the profile name (prefer IAM-exported; fallback is deterministic)
+- name: Decide instance profile name for nodegroup
   set_fact:
     _env_name_sanitized: "{{ env_name | regex_replace('[^A-Za-z0-9+=,.@_-]', '-') }}"
+    _ip_name: "{{ eks_nodegroup_instance_profile | default('eks_nodegroup_instance_profile_' ~ _env_name_sanitized) }}"
 
-# 2) Decide profile name to look up
-#    Prefer exported var from IAM tasks; else fallback deterministic name
-- name: Choose instance profile name
-  set_fact:
-    _ip_name: "{{ eks_nodegroup_instance_profile | default('eks_nodegroup_instance_profile_' ~ _env_name_sanitized) | trim }}"
+# Create the instance profile if missing (idempotent)
+- name: Ensure nodegroup instance profile exists
+  amazon.aws.iam_instance_profile:
+    name: "{{ _ip_name }}"
+    state: present
 
-# 3) Lookup the instance profile by NAME (to get the ARN)
-- name: Lookup instance profile
+# Attach the nodegroup role to the instance profile (idempotent)
+- name: Attach nodegroup role to instance profile
+  amazon.aws.iam_instance_profile:
+    name: "{{ _ip_name }}"
+    roles:
+      - "{{ eks_nodegroup_role_name }}"
+    state: present
+
+# Read back the profile to get its ARN
+- name: Lookup instance profile to get ARN
   amazon.aws.iam_instance_profile_info:
     name: "{{ _ip_name }}"
   register: _ip_info
-  failed_when: false
-  changed_when: false
 
-# 4) Fail early with a clear error if not found
-- name: Fail if instance profile not found
-  fail:
-    msg: >-
-      Instance profile '{{ _ip_name }}' not found.
-      Make sure your IAM role created it and exported 'eks_nodegroup_instance_profile'.
-  when: _ip_info.instance_profiles is not defined or _ip_info.instance_profiles | length == 0
+- name: Assert instance profile ARN is available
+  assert:
+    that:
+      - _ip_info.instance_profiles is defined
+      - _ip_info.instance_profiles | length > 0
+    fail_msg: "Instance profile '{{ _ip_name }}' not found after creation/attach."
 
-# 5) Extract the ARN for use in Launch Template
-- name: Set instance profile ARN
+- name: Set instance profile ARN fact
   set_fact:
     _ip_arn: "{{ _ip_info.instance_profiles[0].arn }}"
 
