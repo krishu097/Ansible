@@ -1,12 +1,17 @@
 ---
-# Global Configuration
-env_name: "{{ env_name | default('uat-edfx') }}"
-env_name_safe: "{{ (env_name | default('uat-edfx')) | replace('-', '_') }}"
-aws_region: "{{ aws_region | default('us-east-2') }}"
+# ========= Global =========
+env_name: "uat-edfx" # override with: -e env_name=...
+aws_region: "us-east-2" # override with: -e aws_region=...
 
-# VPC Configuration
+# Helpful sanitized variant if you need to build names
+env_name_safe: "{{ env_name | replace('-', '_') }}"
+
+# ========= VPC =========
 vpc_cidr: "10.0.0.0/16"
 create_nat_gateway: true
+
+# If you create VPC via Ansible, these guide creation;
+# discovery later uses tags Environment={{ env_name }} and Tier=private
 vpc_public_subnets:
   - { cidr: "10.0.1.0/24", az: "{{ aws_region }}a" }
   - { cidr: "10.0.2.0/24", az: "{{ aws_region }}b" }
@@ -14,18 +19,16 @@ vpc_private_subnets:
   - { cidr: "10.0.10.0/24", az: "{{ aws_region }}a" }
   - { cidr: "10.0.20.0/24", az: "{{ aws_region }}b" }
 
-# EKS Configuration
-eks_version: "1.32"
-eks_cluster_name: "eks-{{ env_name }}"
-endpoint_public_access: true
-endpoint_private_access: true
-public_access_cidrs:
-  - "0.0.0.0/0"
+# Tags used by discovery
+vpc_env_tag_key: "Environment"
+vpc_managedby_tag_key: "ManagedBy"
+vpc_managedby_tag_value: "ansible"
+subnet_private_tag_key: "Tier"
+subnet_private_tag_value: "private"
 
-cluster_logging:
-  clusterLogging:
-    - types: ["api", "audit", "authenticator", "controllerManager", "scheduler"]
-      enabled: true
+# ========= EKS =========
+eks_version: "1.30" # keep in sync with eksctl template
+eks_cluster_name: "eks-{{ env_name }}"
 
 eks_cluster_tags:
   Environment: "{{ env_name }}"
@@ -33,15 +36,14 @@ eks_cluster_tags:
   ManagedBy: "ansible"
   Project: "ansible-cicd"
 
-# Node Group Configuration
+# ========= Nodegroup =========
 nodegroup_name: "ng-{{ env_name }}"
-nodegroup_instance_types: ["t3.medium"]
+nodegroup_instance_types: ["t3.medium"] # eksctl template uses the first one
 nodegroup_desired_size: 2
 nodegroup_min_size: 1
 nodegroup_max_size: 3
 nodegroup_disk_size: 20
-nodegroup_ami_type: "AL2_x86_64"
-nodegroup_capacity_type: "ON_DEMAND"
+nodegroup_capacity_type: "ON_DEMAND" # ON_DEMAND or SPOT
 nodegroup_labels: {}
 nodegroup_taints: []
 
@@ -51,17 +53,12 @@ nodegroup_tags:
   ManagedBy: "ansible"
   Project: "ansible-cicd"
 
-# Security Groups
-eks_controlplane_sg_name: "eks-controlplane-sg-{{ env_name }}"
-eks_workernodes_sg_name: "eks-workernodes-sg-{{ env_name }}"
+# ========= Security Groups (names; ids are discovered) =========
+# Match the actual SG names you created earlier (no "-sg-" in the name)
+eks_controlplane_sg_name: "eks-controlplane-{{ env_name }}"
+eks_workernodes_sg_name: "eks-workernodes-{{ env_name }}"
 
-control_plane_rules:
-  - proto: tcp
-    ports: [443]
-    cidr_ip: "0.0.0.0/0"
-    rule_desc: "HTTPS API access"
-
-# IAM Configuration
+# ========= IAM (names; ARNs are discovered) =========
 eks_cluster_role_name: "eks-cluster-role-{{ env_name }}"
 eks_nodegroup_role_name: "eks-nodegroup-role-{{ env_name }}"
 
@@ -90,11 +87,11 @@ eks_nodegroup_managed_policies:
   - "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
   - "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
 
-# Timeouts
+# ========= Timeouts =========
 cluster_create_timeout: 1800
 nodegroup_create_timeout: 3600
 cluster_delete_timeout: 1200
 nodegroup_delete_timeout: 1200
 
-# Cleanup Configuration
-require_confirmation: false # Set to true for interactive confirmation
+# ========= Cleanup =========
+require_confirmation: false
