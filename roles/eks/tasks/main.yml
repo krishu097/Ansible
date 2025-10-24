@@ -125,18 +125,11 @@
       run before 'eks' in the same play.
 
 ###########################################
-# 1) Create / Update EKS Cluster (handle immutables)
+# 1) Create / Update EKS Cluster (no *_info needed)
 ###########################################
-- name: Get EKS cluster info
-  community.aws.eks_cluster_info:
-    name: "{{ eks_cluster_name }}"
-    region: "{{ aws_region }}"
-  register: eks_cluster_info
-  failed_when: false
-  changed_when: false
 
-# CREATE path (include immutable fields)
-- name: Create EKS Cluster (first time)
+# Try "create" with immutable fields; swallow the known immutable error
+- name: Create EKS Cluster (attempt with immutables)
   community.aws.eks_cluster:
     name: "{{ eks_cluster_name }}"
     region: "{{ aws_region }}"
@@ -149,21 +142,24 @@
     wait: true
     wait_timeout: "{{ cluster_create_timeout }}"
     state: present
-  when: eks_cluster_info.clusters is not defined or eks_cluster_info.clusters | length == 0
-  register: eks_cluster_created
+  register: eks_cluster_attempt
+  failed_when: >
+    eks_cluster_attempt.failed and
+    ('Cannot modify security groups of existing cluster' not in (eks_cluster_attempt.msg | default(''))) and
+    ('already exists' not in (eks_cluster_attempt.msg | default(''))) and
+    ('Cluster already exists' not in (eks_cluster_attempt.msg | default('')))
 
-# UPDATE path (omit immutable fields: subnets/security_groups/role_arn)
-- name: Update EKS Cluster (non-immutable settings)
+# If the attempt failed due to immutables/existing, do a non-immutable update
+- name: Update EKS Cluster (omit immutable fields)
   community.aws.eks_cluster:
     name: "{{ eks_cluster_name }}"
     region: "{{ aws_region }}"
-    # version: "{{ eks_version }}"   # uncomment ONLY when intentionally upgrading
+    # version: "{{ eks_version }}"   # uncomment only when intentionally upgrading
     tags: "{{ eks_cluster_tags }}"
     wait: true
     wait_timeout: "{{ cluster_create_timeout }}"
     state: present
-  when: eks_cluster_info.clusters is defined and eks_cluster_info.clusters | length > 0
-  register: eks_cluster_updated
+  when: eks_cluster_attempt is defined and eks_cluster_attempt.failed | default(false)
 
 ###########################################
 # 2) Create / Update Launch Template (attach Worker SG)
