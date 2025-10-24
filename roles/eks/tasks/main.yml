@@ -1,183 +1,44 @@
 ---
-# --- Auto-discover missing inputs from upstream roles ---
-
-# 0a) Ensure we know the VPC (if vpc_id missing)
-- name: Discover VPC by tags if vpc_id is missing
+- name: Discover VPC details by tag
   amazon.aws.ec2_vpc_net_info:
     region: "{{ aws_region }}"
     filters:
       "tag:Environment": "{{ env_name }}"
-      "tag:ManagedBy": "ansible"
-  register: eks_vpc_info
-  when: vpc_id is not defined
+  register: vpc_info
 
-- name: Set vpc_id from discovery
+- name: Set VPC ID
   set_fact:
-    vpc_id: "{{ eks_vpc_info.vpcs[0].id }}"
-  when:
-    - vpc_id is not defined
-    - eks_vpc_info.vpcs | length > 0
+    vpc_id: "{{ vpc_info.vpcs[0].id }}"
 
-- name: Fail if VPC not found
-  fail:
-    msg: "No VPC found with Environment={{ env_name }} and ManagedBy=ansible tags"
-  when:
-    - vpc_id is not defined
-    - eks_vpc_info.vpcs | length == 0
-
-# 0b) Discover Control Plane SG ID if missing
-- name: Discover control-plane SG if missing
-  amazon.aws.ec2_security_group_info:
-    region: "{{ aws_region }}"
-    filters:
-      group-name: "{{ eks_controlplane_sg_name }}"
-      vpc-id: "{{ vpc_id }}"
-  register: eks_cp_sg_info
-  when: eks_controlplane_sg_id is not defined
-
-- name: Set control-plane SG id from discovery
-  set_fact:
-    eks_controlplane_sg_id: "{{ eks_cp_sg_info.security_groups[0].group_id }}"
-  when:
-    - eks_controlplane_sg_id is not defined
-    - eks_cp_sg_info.security_groups | length > 0
-
-- name: Fail if control-plane SG not found
-  fail:
-    msg: "Control-plane security group '{{ eks_controlplane_sg_name }}' not found"
-  when:
-    - eks_controlplane_sg_id is not defined
-    - eks_cp_sg_info.security_groups | length == 0
-
-# 0c) Discover IAM role ARNs if missing
-- name: Discover cluster role ARN if missing
-  amazon.aws.iam_role_info:
-    name: "{{ eks_cluster_role_name | default('eks-cluster-role-' ~ env_name) }}"
-  register: eks_cluster_role_info
-  when: eks_cluster_role_arn is not defined
-
-- name: Set cluster role ARN from discovery
-  set_fact:
-    eks_cluster_role_arn: "{{ eks_cluster_role_info.iam_roles[0].arn }}"
-  when:
-    - eks_cluster_role_arn is not defined
-    - eks_cluster_role_info.iam_roles | length > 0
-
-- name: Discover nodegroup role ARN if missing
-  amazon.aws.iam_role_info:
-    name: "{{ eks_nodegroup_role_name | default('eks-nodegroup-role-' ~ env_name) }}"
-  register: eks_nodegroup_role_info
-  when: eks_nodegroup_role_arn is not defined
-
-- name: Set nodegroup role ARN from discovery
-  set_fact:
-    eks_nodegroup_role_arn: "{{ eks_nodegroup_role_info.iam_roles[0].arn }}"
-  when:
-    - eks_nodegroup_role_arn is not defined
-    - eks_nodegroup_role_info.iam_roles | length > 0
-
-# 0d) Discover private subnets by tags if missing
-- name: Discover private subnets by tags if missing
+- name: Discover private subnets by tag
   amazon.aws.ec2_vpc_subnet_info:
     region: "{{ aws_region }}"
     filters:
       vpc-id: "{{ vpc_id }}"
       "tag:Tier": "private"
-  register: eks_private_subnets
-  when: private_subnet_ids is not defined
+  register: subnet_info
 
-- name: Set private_subnet_ids from discovery
+- name: Set private subnets fact
   set_fact:
-    private_subnet_ids: "{{ eks_private_subnets.subnets | map(attribute='id') | list }}"
-  when:
-    - private_subnet_ids is not defined
-    - eks_private_subnets.subnets | length > 0
+    private_subnets: "{{ subnet_info.subnets | map('extract', {'id':'id', 'availability_zone':'availability_zone'}) | list }}"
 
-# 0) Pre-flight: make sure upstream facts exist
-- name: Assert inputs from VPC/SG/IAM roles
-  assert:
-    that:
-      - private_subnet_ids is defined
-      - private_subnet_ids | length > 0
-      - eks_controlplane_sg_id is defined
-      - eks_cluster_role_arn is defined
-      - eks_nodegroup_role_arn is defined
-    fail_msg: >
-      Missing required inputs from upstream roles. Ensure 'vpc', 'sg', and 'iam'
-      run before 'eks' in the same play.
+- name: Render eksctl cluster config
+  template:
+    src: eksctl-cluster.yaml.j2
+    dest: "{{ playbook_dir }}/eksctl-cluster.yaml"
+  vars:
+    eks_version: "{{ eks_version }}"
+    nodegroup_instance_type: "{{ nodegroup_instance_types[0] }}"
+    nodegroup_desired_size: "{{ nodegroup_desired_size }}"
+    nodegroup_min_size: "{{ nodegroup_min_size }}"
+    nodegroup_max_size: "{{ nodegroup_max_size }}"
+    nodegroup_disk_size: "{{ nodegroup_disk_size }}"
 
-###########################################
-# 1) Create / Update EKS Cluster (no *_info needed)
-###########################################
+- name: Run eksctl to create EKS cluster
+  command: eksctl create cluster -f "{{ playbook_dir }}/eksctl-cluster.yaml"
+  register: eksctl_output
+  changed_when: "'created' in eksctl_output.stdout"
 
-# Try "create" with immutable fields; ignore known immutable error on re-run
-- name: Create EKS Cluster (attempt with immutables)
-  community.aws.eks_cluster:
-    name: "{{ eks_cluster_name }}"
-    region: "{{ aws_region }}"
-    version: "{{ eks_version }}"
-    role_arn: "{{ eks_cluster_role_arn }}"
-    subnets: "{{ private_subnet_ids }}"
-    security_groups:
-      - "{{ eks_controlplane_sg_id }}"
-    tags: "{{ eks_cluster_tags }}"
-    wait: true
-    wait_timeout: "{{ cluster_create_timeout }}"
-    state: present
-  register: eks_cluster_attempt
-  failed_when: >
-    eks_cluster_attempt.failed and
-    ('Cannot modify security groups of existing cluster' not in (eks_cluster_attempt.msg | default(''))) and
-    ('already exists' not in (eks_cluster_attempt.msg | default(''))) and
-    ('Cluster already exists' not in (eks_cluster_attempt.msg | default('')))
-
-# If the attempt failed due to immutables/existing, do a non-immutable update
-- name: Update EKS Cluster (omit immutable fields)
-  community.aws.eks_cluster:
-    name: "{{ eks_cluster_name }}"
-    region: "{{ aws_region }}"
-    # version: "{{ eks_version }}"   # uncomment only when intentionally upgrading
-    tags: "{{ eks_cluster_tags }}"
-    wait: true
-    wait_timeout: "{{ cluster_create_timeout }}"
-    state: present
-  when: eks_cluster_attempt is defined and eks_cluster_attempt.failed | default(false)
-
-###########################################
-# 2) Create / Update EKS Managed Node Group (NO Launch Template)
-###########################################
-- name: Create / Update EKS Managed Node Group
-  community.aws.eks_nodegroup:
-    region: "{{ aws_region }}"
-    cluster_name: "{{ eks_cluster_name }}"
-    name: "{{ nodegroup_name }}"
-    node_role: "{{ eks_nodegroup_role_arn }}" # role ARN; EKS will attach instance profile
-    subnets: "{{ private_subnet_ids }}"
-    scaling_config:
-      min_size: "{{ nodegroup_min_size }}"
-      max_size: "{{ nodegroup_max_size }}"
-      desired_size: "{{ nodegroup_desired_size }}"
-    disk_size: "{{ nodegroup_disk_size }}"
-    instance_types: "{{ nodegroup_instance_types }}"
-    ami_type: "{{ nodegroup_ami_type }}"
-    capacity_type: "{{ nodegroup_capacity_type }}"
-    labels: "{{ nodegroup_labels }}"
-    taints: "{{ nodegroup_taints }}"
-    tags: "{{ nodegroup_tags }}"
-    wait: true
-    wait_timeout: "{{ nodegroup_create_timeout }}"
-    state: present
-  register: eks_nodegroup
-
-###########################################
-# 3) Helpful Output
-###########################################
-- name: Debug EKS Artifacts
+- name: Show eksctl output
   debug:
-    msg:
-      - "Cluster: {{ eks_cluster_name }} / Version: {{ eks_version }}"
-      - "Control Plane SG: {{ eks_controlplane_sg_id }}"
-      - "Private Subnets: {{ private_subnet_ids | join(', ') }}"
-      - "Cluster Role: {{ eks_cluster_role_arn }}"
-      - "Nodegroup Role: {{ eks_nodegroup_role_arn }}"
-      - "Nodegroup: {{ nodegroup_name }} (desired={{ nodegroup_desired_size }})"
+    var: eksctl_output.stdout
