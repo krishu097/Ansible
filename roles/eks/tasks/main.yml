@@ -49,24 +49,7 @@
     - eks_controlplane_sg_id is not defined
     - eks_cp_sg_info.security_groups | length == 0
 
-# 0c) Discover Worker SG ID if missing (for Launch Template)
-- name: Discover worker SG if missing
-  amazon.aws.ec2_security_group_info:
-    region: "{{ aws_region }}"
-    filters:
-      group-name: "{{ eks_workernodes_sg_name }}"
-      vpc-id: "{{ vpc_id }}"
-  register: eks_worker_sg_info
-  when: eks_workernodes_sg_id is not defined
-
-- name: Set worker SG id from discovery
-  set_fact:
-    eks_workernodes_sg_id: "{{ eks_worker_sg_info.security_groups[0].group_id }}"
-  when:
-    - eks_workernodes_sg_id is not defined
-    - eks_worker_sg_info.security_groups | length > 0
-
-# 0d) Discover IAM role ARNs if missing
+# 0c) Discover IAM role ARNs if missing
 - name: Discover cluster role ARN if missing
   amazon.aws.iam_role_info:
     name: "{{ eks_cluster_role_name | default('eks-cluster-role-' ~ env_name) }}"
@@ -93,13 +76,13 @@
     - eks_nodegroup_role_arn is not defined
     - eks_nodegroup_role_info.iam_roles | length > 0
 
-# 0e) Discover private subnets by tags if missing
+# 0d) Discover private subnets by tags if missing
 - name: Discover private subnets by tags if missing
   amazon.aws.ec2_vpc_subnet_info:
     region: "{{ aws_region }}"
     filters:
       vpc-id: "{{ vpc_id }}"
-      "tag:Tier": "private" # adjust if your tag key/value differs
+      "tag:Tier": "private"
   register: eks_private_subnets
   when: private_subnet_ids is not defined
 
@@ -117,7 +100,6 @@
       - private_subnet_ids is defined
       - private_subnet_ids | length > 0
       - eks_controlplane_sg_id is defined
-      - eks_workernodes_sg_id is defined
       - eks_cluster_role_arn is defined
       - eks_nodegroup_role_arn is defined
     fail_msg: >
@@ -128,7 +110,7 @@
 # 1) Create / Update EKS Cluster (no *_info needed)
 ###########################################
 
-# Try "create" with immutable fields; swallow the known immutable error
+# Try "create" with immutable fields; ignore known immutable error on re-run
 - name: Create EKS Cluster (attempt with immutables)
   community.aws.eks_cluster:
     name: "{{ eks_cluster_name }}"
@@ -160,126 +142,24 @@
     wait_timeout: "{{ cluster_create_timeout }}"
     state: present
   when: eks_cluster_attempt is defined and eks_cluster_attempt.failed | default(false)
-  ################################################################################3
-  # --- Resolve instance profile and use its ARN (avoids name regex problems) ---
-
-# 1) sanitize env once
-- name: Sanitize env name for IAM-safe strings
-  set_fact:
-    _env_name_sanitized: "{{ env_name | regex_replace('[^A-Za-z0-9+=,.@_-]', '-') }}"
-
-# 2) now build the profile name (can safely use the sanitized var)
-- name: Decide instance profile name for nodegroup
-  set_fact:
-    _ip_name: "{{ eks_nodegroup_instance_profile | default('eks_nodegroup_instance_profile_' ~ _env_name_sanitized) }}"
-
-# Create the instance profile if missing (idempotent)
-- name: Ensure nodegroup instance profile exists
-  amazon.aws.iam_instance_profile:
-    name: "{{ _ip_name }}"
-    state: present
-
-# Attach the nodegroup role to the instance profile (idempotent)
-- name: Attach nodegroup role to instance profile
-  amazon.aws.iam_instance_profile:
-    name: "{{ _ip_name }}"
-    role: "{{ eks_nodegroup_role_name }}"
-    state: present
-
-# Read back the profile to get its ARN
-- name: Wait for instance profile to become visible
-  amazon.aws.iam_instance_profile_info:
-    name: "{{ _ip_name }}"
-  register: _ip_info
-  failed_when: false
-  changed_when: false
-  retries: 18
-  delay: 5
-  until: >
-    (_ip_info.instance_profiles is defined and (_ip_info.instance_profiles | length) > 0)
-    or
-    (_ip_info.iam_instance_profiles is defined and (_ip_info.iam_instance_profiles | length) > 0)
-
-# Normalize instance profile list (if you don't already have this)
-- name: Normalize instance profile list
-  set_fact:
-    _ip_list: "{{ _ip_info.instance_profiles | default(_ip_info.iam_instance_profiles) }}"
-
-# Extract clean ARN and Name from returned shape (handles string or nested dict)
-- name: Extract instance profile ARN and Name
-  set_fact:
-    _ip_arn_str: >-
-      {{
-        (_ip_list[0].arn
-          if _ip_list[0].arn is string
-          else (_ip_list[0].arn.arn
-                if (_ip_list[0].arn is mapping and 'arn' in _ip_list[0].arn)
-                else ''))
-      }}
-    _ip_name_str: >-
-      {{
-        _ip_list[0].instance_profile_name
-          | default(_ip_list[0].name, true)
-      }}
-
-# Sanity check: we must have either a valid ARN or a Name
-- name: Assert instance profile identity is usable
-  assert:
-    that:
-      - _ip_arn_str != '' or (_ip_name_str is defined and _ip_name_str | length > 0)
-    fail_msg: "Could not determine instance profile ARN/Name from lookup result."
 
 ###########################################
-# 2) Create / Update Launch Template (attach Worker SG)
+# 2) Create / Update EKS Managed Node Group (NO Launch Template)
 ###########################################
-- name: Create / Update Launch Template for Node Group (no SSH, Session Manager only)
-  amazon.aws.ec2_launch_template:
-    name: "lt-{{ nodegroup_name }}"
-    region: "{{ aws_region }}"
-    state: present
-    instance_type: "{{ nodegroup_instance_types[0] }}"
-    iam_instance_profile: >-
-      {{
-        {'arn': _ip_arn_str}
-          if (_ip_arn_str is match('^arn:aws:iam::[0-9]{12}:instance-profile/.+$'))
-          else {'name': _ip_name_str}
-      }}
-    network_interfaces:
-      - device_index: 0
-        delete_on_termination: true
-        groups:
-          - "{{ eks_workernodes_sg_id }}"
-    block_device_mappings:
-      - device_name: /dev/xvda
-        ebs:
-          volume_size: "{{ nodegroup_disk_size }}"
-          volume_type: gp3
-          delete_on_termination: true
-    # Do NOT set image_id or user_data so EKS managed AMI + bootstrap are used
-    tag_specifications:
-      - resource_type: instance
-        tags: "{{ nodegroup_tags }}"
-      - resource_type: volume
-        tags: "{{ nodegroup_tags }}"
-  register: lt_result
-
-###########################################
-# 3) Create / Update EKS Managed Node Group
-###########################################
-- name: Create / Update EKS Node Group
+- name: Create / Update EKS Managed Node Group
   community.aws.eks_nodegroup:
     region: "{{ aws_region }}"
     cluster_name: "{{ eks_cluster_name }}"
     name: "{{ nodegroup_name }}"
-    node_role: "{{ eks_nodegroup_role_arn }}" # this version expects node_role (ARN)
+    node_role: "{{ eks_nodegroup_role_arn }}" # role ARN; EKS will attach instance profile
     subnets: "{{ private_subnet_ids }}"
-    launch_template:
-      name: "lt-{{ nodegroup_name }}"
-      version: "$Latest"
     scaling_config:
       min_size: "{{ nodegroup_min_size }}"
       max_size: "{{ nodegroup_max_size }}"
       desired_size: "{{ nodegroup_desired_size }}"
+    disk_size: "{{ nodegroup_disk_size }}"
+    instance_types: "{{ nodegroup_instance_types }}"
+    ami_type: "{{ nodegroup_ami_type }}"
     capacity_type: "{{ nodegroup_capacity_type }}"
     labels: "{{ nodegroup_labels }}"
     taints: "{{ nodegroup_taints }}"
@@ -290,14 +170,13 @@
   register: eks_nodegroup
 
 ###########################################
-# 4) Helpful Output
+# 3) Helpful Output
 ###########################################
 - name: Debug EKS Artifacts
   debug:
     msg:
       - "Cluster: {{ eks_cluster_name }} / Version: {{ eks_version }}"
       - "Control Plane SG: {{ eks_controlplane_sg_id }}"
-      - "Worker SG: {{ eks_workernodes_sg_id }}"
       - "Private Subnets: {{ private_subnet_ids | join(', ') }}"
       - "Cluster Role: {{ eks_cluster_role_arn }}"
       - "Nodegroup Role: {{ eks_nodegroup_role_arn }}"
