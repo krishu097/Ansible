@@ -93,6 +93,16 @@ jobs:
           sudo ./aws/install --update
           aws --version
 
+      - name: Install kubectl & eksctl
+        shell: bash
+        run: |
+          set -e
+          # eksctl (latest)
+          echo "Installing eksctl..."
+          curl -sSL "https://github.com/eksctl-io/eksctl/releases/latest/download/eksctl_$(uname -s)_amd64.tar.gz" \
+            | sudo tar -xz -C /usr/local/bin
+          eksctl version
+
       - name: Install dependencies
         run: |
           python3 -m pip install --upgrade pip
