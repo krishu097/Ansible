@@ -44,10 +44,11 @@
     map_public: false
     tags:
       Name: "subnet-{{ env_name }}-private-{{ item.az }}"
-      kubernetes.io/cluster/{{ eks_cluster_name }}: "shared"
+      kubernetes.io/cluster/{{ eks_cluster_name }}: "owned"
       kubernetes.io/role/internal-elb: "1"
       Environment: "{{ env_name }}"
       Type: "private"
+      Tier: "private"
   loop: "{{ vpc_private_subnets }}"
   register: private_subnets_result
 
