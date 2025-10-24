@@ -183,8 +183,7 @@
 - name: Attach nodegroup role to instance profile
   amazon.aws.iam_instance_profile:
     name: "{{ _ip_name }}"
-    roles:
-      - "{{ eks_nodegroup_role_name }}"
+    role: "{{ eks_nodegroup_role_name }}"
     state: present
 
 # Read back the profile to get its ARN
