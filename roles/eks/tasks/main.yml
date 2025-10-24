@@ -18,6 +18,13 @@
     - vpc_id is not defined
     - eks_vpc_info.vpcs | length > 0
 
+- name: Fail if VPC not found
+  fail:
+    msg: "No VPC found with Environment={{ env_name }} and ManagedBy=ansible tags"
+  when:
+    - vpc_id is not defined
+    - eks_vpc_info.vpcs | length == 0
+
 # 0b) Discover Control Plane SG ID if missing
 - name: Discover control-plane SG if missing
   amazon.aws.ec2_security_group_info:
@@ -34,6 +41,13 @@
   when:
     - eks_controlplane_sg_id is not defined
     - eks_cp_sg_info.security_groups | length > 0
+
+- name: Fail if control-plane SG not found
+  fail:
+    msg: "Control-plane security group '{{ eks_controlplane_sg_name }}' not found"
+  when:
+    - eks_controlplane_sg_id is not defined
+    - eks_cp_sg_info.security_groups | length == 0
 
 # 0c) Discover Worker SG ID if missing (not strictly needed for cluster, but needed for LT)
 - name: Discover worker SG if missing
@@ -136,6 +150,8 @@
     region: "{{ aws_region }}"
     state: present
     instance_type: "{{ nodegroup_instance_types[0] }}" # <- required now
+    iam_instance_profile:
+      name: "{{ eks_nodegroup_instance_profile | default('eks-nodegroup-instance-profile-' ~ env_name) }}"
     network_interfaces:
       - device_index: 0
         delete_on_termination: true
@@ -147,6 +163,9 @@
           volume_size: "{{ nodegroup_disk_size }}"
           volume_type: gp3
           delete_on_termination: true
+    user_data: |
+      #!/bin/bash
+      /etc/eks/bootstrap.sh {{ eks_cluster_name }}
     # do NOT set image_id; let EKS pick the managed AMI
     tag_specifications:
       - resource_type: instance

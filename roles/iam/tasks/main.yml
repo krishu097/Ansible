@@ -23,14 +23,24 @@
       ManagedBy: "ansible"
   register: eks_nodegroup_role
 
-# 3) Export ARNs for downstream roles (eks)
+# 3) Create Instance Profile for Node Group
+- name: Create Instance Profile for EKS Node Group
+  amazon.aws.iam_instance_profile:
+    name: "eks-nodegroup-instance-profile-{{ env_name }}"
+    roles:
+      - "{{ eks_nodegroup_role_name }}"
+    state: present
+  register: eks_nodegroup_instance_profile
+
+# 4) Export ARNs for downstream roles (eks)
 - name: Set IAM role ARNs as facts
   set_fact:
     eks_cluster_role_arn: "{{ eks_cluster_role.role.arn }}"
     eks_nodegroup_role_arn: "{{ eks_nodegroup_role.role.arn }}"
+    eks_nodegroup_instance_profile: "eks-nodegroup-instance-profile-{{ env_name }}"
     cacheable: true
 
-# 4) Debug
+# 5) Debug
 - name: Debug IAM role ARNs
   debug:
     msg:
@@ -38,3 +48,4 @@
       - "eks_cluster_role_arn={{ eks_cluster_role_arn }}"
       - "eks_nodegroup_role_name={{ eks_nodegroup_role_name }}"
       - "eks_nodegroup_role_arn={{ eks_nodegroup_role_arn }}"
+      - "eks_nodegroup_instance_profile={{ eks_nodegroup_instance_profile }}"
