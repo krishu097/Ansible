@@ -187,17 +187,13 @@
     state: present
 
 # Read back the profile to get its ARN
-- name: Lookup instance profile to get ARN
+- name: Wait for instance profile to become visible
   amazon.aws.iam_instance_profile_info:
     name: "{{ _ip_name }}"
   register: _ip_info
-
-- name: Assert instance profile ARN is available
-  assert:
-    that:
-      - _ip_info.instance_profiles is defined
-      - _ip_info.instance_profiles | length > 0
-    fail_msg: "Instance profile '{{ _ip_name }}' not found after creation/attach."
+  retries: 18 # ~90s total
+  delay: 5
+  until: _ip_info.instance_profiles is defined and _ip_info.instance_profiles | length > 0
 
 - name: Set instance profile ARN fact
   set_fact:
