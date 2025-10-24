@@ -18,9 +18,10 @@
       "tag:Tier": "private"
   register: subnet_info
 
-- name: Set private subnets fact
+- name: Set private subnets fact (az/id only, sorted, max 2)
   set_fact:
-    private_subnets: "{{ subnet_info.subnets | map('extract', {'id':'id', 'availability_zone':'availability_zone'}) | list }}"
+    private_subnets: "{{ (subnet_info.subnets | json_query('[].{az: availability_zone, id: id}')) | sort(attribute='az') | slice(2) | first | default([]) }}"
+  when: subnet_info.subnets is defined
 
 - name: Render eksctl cluster config
   template:
