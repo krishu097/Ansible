@@ -200,14 +200,34 @@
     or
     (_ip_info.iam_instance_profiles is defined and (_ip_info.iam_instance_profiles | length) > 0)
 
-# Normalize the list key
+# Normalize instance profile list (if you don't already have this)
 - name: Normalize instance profile list
   set_fact:
     _ip_list: "{{ _ip_info.instance_profiles | default(_ip_info.iam_instance_profiles) }}"
 
-- name: Set instance profile ARN fact
+# Extract clean ARN and Name from returned shape (handles string or nested dict)
+- name: Extract instance profile ARN and Name
   set_fact:
-    _ip_arn: "{{ _ip_list[0].arn }}"
+    _ip_arn_str: >-
+      {{
+        (_ip_list[0].arn
+          if _ip_list[0].arn is string
+          else (_ip_list[0].arn.arn
+                if (_ip_list[0].arn is mapping and 'arn' in _ip_list[0].arn)
+                else ''))
+      }}
+    _ip_name_str: >-
+      {{
+        _ip_list[0].instance_profile_name
+          | default(_ip_list[0].name, true)
+      }}
+
+# Sanity check: we must have either a valid ARN or a Name
+- name: Assert instance profile identity is usable
+  assert:
+    that:
+      - _ip_arn_str != '' or (_ip_name_str is defined and _ip_name_str | length > 0)
+    fail_msg: "Could not determine instance profile ARN/Name from lookup result."
 
 ###########################################
 # 2) Create / Update Launch Template (attach Worker SG)
@@ -218,8 +238,12 @@
     region: "{{ aws_region }}"
     state: present
     instance_type: "{{ nodegroup_instance_types[0] }}"
-    iam_instance_profile:
-      name: "{{ _ip_arn }}"
+    iam_instance_profile: >-
+      {{
+        {'arn': _ip_arn_str}
+          if (_ip_arn_str is match('^arn:aws:iam::[0-9]{12}:instance-profile/.+$'))
+          else {'name': _ip_name_str}
+      }}
     network_interfaces:
       - device_index: 0
         delete_on_termination: true
