@@ -160,6 +160,40 @@
     wait_timeout: "{{ cluster_create_timeout }}"
     state: present
   when: eks_cluster_attempt is defined and eks_cluster_attempt.failed | default(false)
+  ################################################################################3
+  # --- Resolve instance profile and use its ARN (avoids name regex problems) ---
+
+# 1) Build a sanitized fallback name (only if you didn't export one from IAM)
+- name: Normalize env name for fallback profile
+  set_fact:
+    _env_name_sanitized: "{{ env_name | regex_replace('[^A-Za-z0-9+=,.@_-]', '-') }}"
+
+# 2) Decide profile name to look up
+#    Prefer exported var from IAM tasks; else fallback deterministic name
+- name: Choose instance profile name
+  set_fact:
+    _ip_name: "{{ eks_nodegroup_instance_profile | default('eks_nodegroup_instance_profile_' ~ _env_name_sanitized) | trim }}"
+
+# 3) Lookup the instance profile by NAME (to get the ARN)
+- name: Lookup instance profile
+  amazon.aws.iam_instance_profile_info:
+    name: "{{ _ip_name }}"
+  register: _ip_info
+  failed_when: false
+  changed_when: false
+
+# 4) Fail early with a clear error if not found
+- name: Fail if instance profile not found
+  fail:
+    msg: >-
+      Instance profile '{{ _ip_name }}' not found.
+      Make sure your IAM role created it and exported 'eks_nodegroup_instance_profile'.
+  when: _ip_info.instance_profiles is not defined or _ip_info.instance_profiles | length == 0
+
+# 5) Extract the ARN for use in Launch Template
+- name: Set instance profile ARN
+  set_fact:
+    _ip_arn: "{{ _ip_info.instance_profiles[0].arn }}"
 
 ###########################################
 # 2) Create / Update Launch Template (attach Worker SG)
@@ -171,7 +205,7 @@
     state: present
     instance_type: "{{ nodegroup_instance_types[0] }}"
     iam_instance_profile:
-      name: "{{ eks_nodegroup_instance_profile }}"
+      arn: "{{ _ip_arn }}"
     network_interfaces:
       - device_index: 0
         delete_on_termination: true
