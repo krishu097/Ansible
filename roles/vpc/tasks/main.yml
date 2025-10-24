@@ -52,15 +52,6 @@
   loop: "{{ vpc_private_subnets }}"
   register: private_subnets_result
 
-- name: Check for existing NAT Gateway
-  amazon.aws.ec2_vpc_nat_gateway_info:
-    region: "{{ aws_region }}"
-    filters:
-      vpc-id: "{{ vpc_result.vpc.id }}"
-      state: "available"
-  register: existing_nat_gateways
-  when: create_nat_gateway | default(true) | bool
-
 - name: Create Single NAT Gateway
   amazon.aws.ec2_vpc_nat_gateway:
     state: present
@@ -72,26 +63,8 @@
       Name: "nat-{{ env_name }}"
       Environment: "{{ env_name }}"
       ManagedBy: "ansible"
-  register: nat_gateway_created
-  when: 
-    - create_nat_gateway | default(true) | bool
-    - existing_nat_gateways.nat_gateways | length == 0
-
-- name: Use existing NAT Gateway
-  set_fact:
-    nat_gateway:
-      nat_gateway_id: "{{ existing_nat_gateways.nat_gateways[0].nat_gateway_id }}"
-  when:
-    - create_nat_gateway | default(true) | bool
-    - existing_nat_gateways.nat_gateways | length > 0
-
-- name: Set NAT Gateway from created
-  set_fact:
-    nat_gateway: "{{ nat_gateway_created }}"
-  when:
-    - create_nat_gateway | default(true) | bool
-    - existing_nat_gateways.nat_gateways | length == 0
-    - nat_gateway_created is defined
+  register: nat_gateway
+  when: create_nat_gateway | default(true) | bool
 
 - name: Create Route Table for Private Subnets WITH NAT Route
   amazon.aws.ec2_vpc_route_table:
