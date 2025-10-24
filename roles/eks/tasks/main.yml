@@ -49,7 +49,7 @@
     - eks_controlplane_sg_id is not defined
     - eks_cp_sg_info.security_groups | length == 0
 
-# 0c) Discover Worker SG ID if missing (not strictly needed for cluster, but needed for LT)
+# 0c) Discover Worker SG ID if missing (for Launch Template)
 - name: Discover worker SG if missing
   amazon.aws.ec2_security_group_info:
     region: "{{ aws_region }}"
@@ -93,6 +93,7 @@
     - eks_nodegroup_role_arn is not defined
     - eks_nodegroup_role_info.iam_roles | length > 0
 
+# 0e) Discover private subnets by tags if missing
 - name: Discover private subnets by tags if missing
   amazon.aws.ec2_vpc_subnet_info:
     region: "{{ aws_region }}"
@@ -124,9 +125,18 @@
       run before 'eks' in the same play.
 
 ###########################################
-# 1) Create / Update EKS Cluster
+# 1) Create / Update EKS Cluster (handle immutables)
 ###########################################
-- name: Create / Update EKS Cluster
+- name: Get EKS cluster info
+  community.aws.eks_cluster_info:
+    name: "{{ eks_cluster_name }}"
+    region: "{{ aws_region }}"
+  register: eks_cluster_info
+  failed_when: false
+  changed_when: false
+
+# CREATE path (include immutable fields)
+- name: Create EKS Cluster (first time)
   community.aws.eks_cluster:
     name: "{{ eks_cluster_name }}"
     region: "{{ aws_region }}"
@@ -139,7 +149,21 @@
     wait: true
     wait_timeout: "{{ cluster_create_timeout }}"
     state: present
-  register: eks_cluster
+  when: eks_cluster_info.clusters is not defined or eks_cluster_info.clusters | length == 0
+  register: eks_cluster_created
+
+# UPDATE path (omit immutable fields: subnets/security_groups/role_arn)
+- name: Update EKS Cluster (non-immutable settings)
+  community.aws.eks_cluster:
+    name: "{{ eks_cluster_name }}"
+    region: "{{ aws_region }}"
+    # version: "{{ eks_version }}"   # uncomment ONLY when intentionally upgrading
+    tags: "{{ eks_cluster_tags }}"
+    wait: true
+    wait_timeout: "{{ cluster_create_timeout }}"
+    state: present
+  when: eks_cluster_info.clusters is defined and eks_cluster_info.clusters | length > 0
+  register: eks_cluster_updated
 
 ###########################################
 # 2) Create / Update Launch Template (attach Worker SG)
@@ -149,7 +173,7 @@
     name: "lt-{{ nodegroup_name }}"
     region: "{{ aws_region }}"
     state: present
-    instance_type: "{{ nodegroup_instance_types[0] }}" # <- required now
+    instance_type: "{{ nodegroup_instance_types[0] }}"
     iam_instance_profile:
       name: "{{ eks_nodegroup_instance_profile | default('eks_nodegroup_instance_profile_' ~ env_name_safe) }}"
     network_interfaces:
@@ -157,16 +181,13 @@
         delete_on_termination: true
         groups:
           - "{{ eks_workernodes_sg_id }}"
-    block_device_mappings: # optional but typical
+    block_device_mappings:
       - device_name: /dev/xvda
         ebs:
           volume_size: "{{ nodegroup_disk_size }}"
           volume_type: gp3
           delete_on_termination: true
-    user_data: |
-      #!/bin/bash
-      /etc/eks/bootstrap.sh {{ eks_cluster_name }}
-    # do NOT set image_id; let EKS pick the managed AMI
+    # Do NOT set image_id or user_data so EKS managed AMI + bootstrap are used
     tag_specifications:
       - resource_type: instance
         tags: "{{ nodegroup_tags }}"
@@ -182,7 +203,7 @@
     region: "{{ aws_region }}"
     cluster_name: "{{ eks_cluster_name }}"
     name: "{{ nodegroup_name }}"
-    node_role: "{{ eks_nodegroup_role_arn }}" # <-- use node_role (expects ARN in your version)
+    node_role: "{{ eks_nodegroup_role_arn }}" # this version expects node_role (ARN)
     subnets: "{{ private_subnet_ids }}"
     launch_template:
       name: "lt-{{ nodegroup_name }}"
