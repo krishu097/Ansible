@@ -163,10 +163,14 @@
   ################################################################################3
   # --- Resolve instance profile and use its ARN (avoids name regex problems) ---
 
-# Decide the profile name (prefer IAM-exported; fallback is deterministic)
-- name: Decide instance profile name for nodegroup
+# 1) sanitize env once
+- name: Sanitize env name for IAM-safe strings
   set_fact:
     _env_name_sanitized: "{{ env_name | regex_replace('[^A-Za-z0-9+=,.@_-]', '-') }}"
+
+# 2) now build the profile name (can safely use the sanitized var)
+- name: Decide instance profile name for nodegroup
+  set_fact:
     _ip_name: "{{ eks_nodegroup_instance_profile | default('eks_nodegroup_instance_profile_' ~ _env_name_sanitized) }}"
 
 # Create the instance profile if missing (idempotent)
