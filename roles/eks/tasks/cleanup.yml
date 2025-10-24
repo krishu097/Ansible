@@ -43,13 +43,7 @@
       loop_control:
         label: "{{ item.nodegroup_name }}"
 
-    # 2) Delete Launch Templates
-    - name: Delete launch template
-      amazon.aws.ec2_launch_template:
-        name: "lt-{{ nodegroup_name }}"
-        region: "{{ aws_region }}"
-        state: absent
-      ignore_errors: true
+
 
     # 3) Delete EKS Cluster
     - name: Delete EKS cluster
@@ -66,5 +60,4 @@
           ✅ Successfully destroyed EKS infrastructure
           🎯 Cluster: {{ eks_cluster_name }}
           📦 Node Groups: {{ nodegroups_info.nodegroups | default([]) | length }}
-          🚀 Launch Templates: 1
   when: eks_cluster_info.cluster is defined

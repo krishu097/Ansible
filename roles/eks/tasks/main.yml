@@ -171,7 +171,7 @@
     state: present
     instance_type: "{{ nodegroup_instance_types[0] }}"
     iam_instance_profile:
-      name: "{{ eks_nodegroup_instance_profile | default('eks_nodegroup_instance_profile_' ~ env_name_safe) }}"
+      name: "{{ eks_nodegroup_instance_profile }}"
     network_interfaces:
       - device_index: 0
         delete_on_termination: true

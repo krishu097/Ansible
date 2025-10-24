@@ -15,7 +15,7 @@ vpc_private_subnets:
   - { cidr: "10.0.20.0/24", az: "{{ aws_region }}b" }
 
 # EKS Configuration
-eks_version: "1.30"
+eks_version: "1.32"
 eks_cluster_name: "eks-{{ env_name }}"
 endpoint_public_access: true
 endpoint_private_access: true
@@ -97,4 +97,4 @@ cluster_delete_timeout: 1200
 nodegroup_delete_timeout: 1200
 
 # Cleanup Configuration
-require_confirmation: false  # Set to true for interactive confirmation
+require_confirmation: false # Set to true for interactive confirmation
