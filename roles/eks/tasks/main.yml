@@ -191,13 +191,23 @@
   amazon.aws.iam_instance_profile_info:
     name: "{{ _ip_name }}"
   register: _ip_info
-  retries: 18 # ~90s total
+  failed_when: false
+  changed_when: false
+  retries: 18
   delay: 5
-  until: _ip_info.instance_profiles is defined and _ip_info.instance_profiles | length > 0
+  until: >
+    (_ip_info.instance_profiles is defined and (_ip_info.instance_profiles | length) > 0)
+    or
+    (_ip_info.iam_instance_profiles is defined and (_ip_info.iam_instance_profiles | length) > 0)
+
+# Normalize the list key
+- name: Normalize instance profile list
+  set_fact:
+    _ip_list: "{{ _ip_info.instance_profiles | default(_ip_info.iam_instance_profiles) }}"
 
 - name: Set instance profile ARN fact
   set_fact:
-    _ip_arn: "{{ _ip_info.instance_profiles[0].arn }}"
+    _ip_arn: "{{ _ip_list[0].arn }}"
 
 ###########################################
 # 2) Create / Update Launch Template (attach Worker SG)
