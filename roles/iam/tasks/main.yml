@@ -26,7 +26,7 @@
 # 3) Create Instance Profile for Node Group
 - name: Create Instance Profile for EKS Node Group
   amazon.aws.iam_instance_profile:
-    name: "eks-nodegroup-instance-profile-{{ env_name }}"
+    name: "eks_nodegroup_instance_profile_{{ env_name }}"
     roles:
       - "{{ eks_nodegroup_role_name }}"
     state: present
@@ -37,7 +37,7 @@
   set_fact:
     eks_cluster_role_arn: "{{ eks_cluster_role.role.arn }}"
     eks_nodegroup_role_arn: "{{ eks_nodegroup_role.role.arn }}"
-    eks_nodegroup_instance_profile: "eks-nodegroup-instance-profile-{{ env_name }}"
+    eks_nodegroup_instance_profile: "eks_nodegroup_instance_profile_{{ env_name }}"
     cacheable: true
 
 # 5) Debug
