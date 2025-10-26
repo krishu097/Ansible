@@ -55,7 +55,7 @@
   when: (subnet_info_tier.subnets | default([]) | length < 2) and
     (subnet_info_type.subnets | default([]) | length < 2)
 
-# 4) Choose best subnet source
+# 4) Choose best subnet source + mark if we used 'ALL'
 - name: Choose best subnet list source
   set_fact:
     _subnets_raw: >-
@@ -66,22 +66,24 @@
           if (subnet_info_type is defined and (subnet_info_type.subnets | default([]) | length) >= 2) else
         (subnet_info_all.subnets | default([]))
       }}
+    _used_all: >-
+      {{
+        (subnet_info_all is defined)
+        and (subnet_info_tier.subnets | default([]) | length < 2)
+        and (subnet_info_type.subnets | default([]) | length < 2)
+      }}
 
-# 5) If using ALL, filter to private by attribute (no public IPs on launch)
+# 5) If we used the ALL list, filter to private: map_public_ip_on_launch == false
 - name: Filter ALL subnets down to private (attribute-based)
   set_fact:
-    _subnets_private_attr: >-
-      {{
-        _subnets_raw | selectattr('map_public_ip_on_launch', 'equalto', false) | list
-      }}
-  when: subnet_info_all is defined and _subnets_raw is subnet_info_all.subnets
+    _subnets_private_attr: "{{ _subnets_raw | selectattr('map_public_ip_on_launch', 'equalto', false) | list }}"
+  when: _used_all | bool
 
-# 6) Finalize candidates
 - name: Finalize candidate private subnets list
   set_fact:
     _candidates: "{{ _subnets_private_attr | default(_subnets_raw) }}"
 
-# 7) Extract az/id, uniq by AZ, sort, and take max 2
+# 6) Extract az/id, uniq by AZ, sort, and take max 2
 - name: Normalize and take 2 private subnets (one per AZ if possible)
   set_fact:
     private_subnets: >-
@@ -94,7 +96,7 @@
         )[:2]
       }}
 
-# 8) Helpful debug so you can see what was found
+# 7) Helpful debug so you can see what was found
 - name: Debug discovered subnets (raw & final)
   debug:
     msg:
