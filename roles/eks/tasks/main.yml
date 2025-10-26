@@ -23,6 +23,10 @@
     private_subnets: "{{ (subnet_info.subnets | json_query('[].{az: availability_zone, id: id}')) | sort(attribute='az') | slice(2) | first | default([]) }}"
   when: subnet_info.subnets is defined
 
+- name: Derive nodegroup_instance_type for template
+  set_fact:
+    nodegroup_instance_type: "{{ (nodegroup_instance_types | first) | default('t3.medium') }}"
+
 - name: Render eksctl cluster config
   template:
     src: eksctl-cluster.yaml.j2
