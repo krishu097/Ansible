@@ -1,5 +1,12 @@
 ---
-# Discover VPC
+# Ensure eksctl exists (fail early with a clear error)
+- name: Verify eksctl is installed
+  command: bash -lc "command -v eksctl"
+  register: _eksctl_check
+  changed_when: false
+  failed_when: _eksctl_check.rc != 0
+
+# --- VPC discovery ---
 - name: Discover VPC details by tag
   amazon.aws.ec2_vpc_net_info:
     region: "{{ aws_region }}"
@@ -8,25 +15,95 @@
       "tag:ManagedBy": "ansible"
   register: vpc_info
 
+- name: Fail if VPC not found
+  fail:
+    msg: "No VPC found with Environment={{ env_name }} ManagedBy=ansible"
+  when: vpc_info.vpcs | length == 0
+
 - name: Set VPC ID
   set_fact:
     vpc_id: "{{ vpc_info.vpcs[0].id }}"
 
-# Discover private subnets (Tier=private)
-- name: Discover private subnets by tag
+# --- Subnet discovery: robust & self-healing ---
+
+# 1) Try Tier=private
+- name: Discover private subnets by tag (Tier=private)
   amazon.aws.ec2_vpc_subnet_info:
     region: "{{ aws_region }}"
     filters:
       vpc-id: "{{ vpc_id }}"
       "tag:Tier": "private"
-  register: subnet_info
+  register: subnet_info_tier
 
-- name: Set private subnets fact (az/id only, sorted, max 2)
+# 2) If not enough, try Type=private
+- name: Discover private subnets by tag (Type=private) as fallback
+  amazon.aws.ec2_vpc_subnet_info:
+    region: "{{ aws_region }}"
+    filters:
+      vpc-id: "{{ vpc_id }}"
+      "tag:Type": "private"
+  register: subnet_info_type
+  when: subnet_info_tier.subnets | default([]) | length < 2
+
+# 3) If still not enough, fetch all subnets then filter by attribute
+- name: Discover ALL subnets in VPC (final fallback)
+  amazon.aws.ec2_vpc_subnet_info:
+    region: "{{ aws_region }}"
+    filters:
+      vpc-id: "{{ vpc_id }}"
+  register: subnet_info_all
+  when: (subnet_info_tier.subnets | default([]) | length < 2) and
+    (subnet_info_type.subnets | default([]) | length < 2)
+
+# 4) Choose best subnet source
+- name: Choose best subnet list source
   set_fact:
-    private_subnets: "{{ (subnet_info.subnets | json_query('[].{az: availability_zone, id: id}')) | sort(attribute='az') | slice(2) | first | default([]) }}"
-  when: subnet_info.subnets is defined
+    _subnets_raw: >-
+      {{
+        (subnet_info_tier.subnets)
+          if (subnet_info_tier.subnets | default([]) | length) >= 2 else
+        (subnet_info_type.subnets | default([]))
+          if (subnet_info_type is defined and (subnet_info_type.subnets | default([]) | length) >= 2) else
+        (subnet_info_all.subnets | default([]))
+      }}
 
-# Discover SGs by name in this VPC
+# 5) If using ALL, filter to private by attribute (no public IPs on launch)
+- name: Filter ALL subnets down to private (attribute-based)
+  set_fact:
+    _subnets_private_attr: >-
+      {{
+        _subnets_raw | selectattr('map_public_ip_on_launch', 'equalto', false) | list
+      }}
+  when: subnet_info_all is defined and _subnets_raw is subnet_info_all.subnets
+
+# 6) Finalize candidates
+- name: Finalize candidate private subnets list
+  set_fact:
+    _candidates: "{{ _subnets_private_attr | default(_subnets_raw) }}"
+
+# 7) Extract az/id, uniq by AZ, sort, and take max 2
+- name: Normalize and take 2 private subnets (one per AZ if possible)
+  set_fact:
+    private_subnets: >-
+      {{
+        (
+          _candidates
+          | json_query('[].{az: availability_zone, id: id}')
+          | unique(attribute='az')
+          | sort(attribute='az')
+        )[:2]
+      }}
+
+# 8) Helpful debug so you can see what was found
+- name: Debug discovered subnets (raw & final)
+  debug:
+    msg:
+      - "Tier=private count: {{ subnet_info_tier.subnets | default([]) | length }}"
+      - "Type=private count: {{ (subnet_info_type.subnets | default([])) | length if subnet_info_type is defined else 'n/a' }}"
+      - "All subnets count: {{ (subnet_info_all.subnets | default([])) | length if subnet_info_all is defined else 'n/a' }}"
+      - "Final private_subnets (max 2): {{ private_subnets }}"
+
+# --- Security groups discovery (in same VPC) ---
 - name: Lookup Control Plane SG by name
   amazon.aws.ec2_security_group_info:
     region: "{{ aws_region }}"
@@ -43,27 +120,37 @@
       vpc-id: "{{ vpc_id }}"
   register: wn_sg_info
 
+- name: Fail if SGs not found
+  fail:
+    msg: "Missing SG(s): controlplane={{ eks_controlplane_sg_name }} or workernodes={{ eks_workernodes_sg_name }} in VPC {{ vpc_id }}"
+  when: (cp_sg_info.security_groups | length == 0) or (wn_sg_info.security_groups | length == 0)
+
 - name: Set SG IDs as facts
   set_fact:
     eks_controlplane_sg_id: "{{ cp_sg_info.security_groups[0].group_id }}"
     eks_workernodes_sg_id: "{{ wn_sg_info.security_groups[0].group_id }}"
 
-# Discover nodegroup IAM role ARN
+# --- Nodegroup IAM role discovery ---
 - name: Read nodegroup role
   amazon.aws.iam_role_info:
     name: "{{ eks_nodegroup_role_name }}"
   register: eks_nodegroup_role_info
 
+- name: Fail if nodegroup role not found
+  fail:
+    msg: "Nodegroup role '{{ eks_nodegroup_role_name }}' not found."
+  when: eks_nodegroup_role_info.iam_roles | length == 0
+
 - name: Set nodegroup role ARN
   set_fact:
     eks_nodegroup_role_arn: "{{ eks_nodegroup_role_info.iam_roles[0].arn }}"
 
-# Small helper var for template
+# --- Helper vars for template ---
 - name: Derive nodegroup_instance_type for template
   set_fact:
     nodegroup_instance_type: "{{ (nodegroup_instance_types | first) | default('t3.medium') }}"
 
-# Guardrails before rendering
+# --- Guardrails before rendering ---
 - name: Assert inputs for eksctl
   assert:
     that:
@@ -73,13 +160,13 @@
       - eks_nodegroup_role_arn is defined
     fail_msg: "Missing inputs for eksctl template (need 2 private subnets, worker SG id, nodegroup role ARN)."
 
-# Render eksctl config
+# --- Render eksctl config ---
 - name: Render eksctl cluster config
   template:
     src: eksctl-cluster.yaml.j2
     dest: "{{ playbook_dir }}/eksctl-cluster.yaml"
 
-# Create cluster via eksctl (idempotent)
+# --- Create cluster via eksctl (idempotent) ---
 - name: Run eksctl to create EKS cluster
   command: eksctl create cluster -f "{{ playbook_dir }}/eksctl-cluster.yaml"
   register: eksctl_output
