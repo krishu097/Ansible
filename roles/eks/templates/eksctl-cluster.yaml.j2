@@ -2,7 +2,7 @@ apiVersion: eksctl.io/v1alpha5
 kind: ClusterConfig
 
 metadata:
-  name: eks-{{ env_name }}
+  name: {{ eks_cluster_name }}
   region: {{ aws_region }}
   version: "{{ eks_version }}"
 
@@ -10,27 +10,16 @@ vpc:
   id: {{ vpc_id }}
   subnets:
     private:
-{% for subnet in private_subnets %}
-      {{ subnet.az }}:
-        id: {{ subnet.id }}
+{% for s in private_subnets %}
+      {{ s.az }}:
+        id: {{ s.id }}
 {% endfor %}
-
-kubernetesNetworkConfig:
-  ipFamily: IPv4
-
-cloudWatch:
-  clusterLogging:
-    enableTypes: ["api", "audit", "authenticator", "controllerManager", "scheduler"]
 
 iam:
   withOIDC: true
 
-clusterSecurityGroup:
-  attachIDs:
-    - {{ eks_controlplane_sg_id }}
-
 managedNodeGroups:
-  - name: ng-{{ env_name }}
+  - name: {{ nodegroup_name }}
     amiFamily: AmazonLinux2
     instanceType: {{ nodegroup_instance_type }}
     desiredCapacity: {{ nodegroup_desired_size }}

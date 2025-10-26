@@ -1,15 +1,18 @@
 ---
+# Discover VPC
 - name: Discover VPC details by tag
   amazon.aws.ec2_vpc_net_info:
     region: "{{ aws_region }}"
     filters:
       "tag:Environment": "{{ env_name }}"
+      "tag:ManagedBy": "ansible"
   register: vpc_info
 
 - name: Set VPC ID
   set_fact:
     vpc_id: "{{ vpc_info.vpcs[0].id }}"
 
+# Discover private subnets (Tier=private)
 - name: Discover private subnets by tag
   amazon.aws.ec2_vpc_subnet_info:
     region: "{{ aws_region }}"
@@ -23,20 +26,71 @@
     private_subnets: "{{ (subnet_info.subnets | json_query('[].{az: availability_zone, id: id}')) | sort(attribute='az') | slice(2) | first | default([]) }}"
   when: subnet_info.subnets is defined
 
+# Discover SGs by name in this VPC
+- name: Lookup Control Plane SG by name
+  amazon.aws.ec2_security_group_info:
+    region: "{{ aws_region }}"
+    filters:
+      group-name: "{{ eks_controlplane_sg_name }}"
+      vpc-id: "{{ vpc_id }}"
+  register: cp_sg_info
+
+- name: Lookup Worker Nodes SG by name
+  amazon.aws.ec2_security_group_info:
+    region: "{{ aws_region }}"
+    filters:
+      group-name: "{{ eks_workernodes_sg_name }}"
+      vpc-id: "{{ vpc_id }}"
+  register: wn_sg_info
+
+- name: Set SG IDs as facts
+  set_fact:
+    eks_controlplane_sg_id: "{{ cp_sg_info.security_groups[0].group_id }}"
+    eks_workernodes_sg_id: "{{ wn_sg_info.security_groups[0].group_id }}"
+
+# Discover nodegroup IAM role ARN
+- name: Read nodegroup role
+  amazon.aws.iam_role_info:
+    name: "{{ eks_nodegroup_role_name }}"
+  register: eks_nodegroup_role_info
+
+- name: Set nodegroup role ARN
+  set_fact:
+    eks_nodegroup_role_arn: "{{ eks_nodegroup_role_info.iam_roles[0].arn }}"
+
+# Small helper var for template
 - name: Derive nodegroup_instance_type for template
   set_fact:
     nodegroup_instance_type: "{{ (nodegroup_instance_types | first) | default('t3.medium') }}"
 
+# Guardrails before rendering
+- name: Assert inputs for eksctl
+  assert:
+    that:
+      - private_subnets is defined
+      - private_subnets | length >= 2
+      - eks_workernodes_sg_id is defined
+      - eks_nodegroup_role_arn is defined
+    fail_msg: "Missing inputs for eksctl template (need 2 private subnets, worker SG id, nodegroup role ARN)."
+
+# Render eksctl config
 - name: Render eksctl cluster config
   template:
     src: eksctl-cluster.yaml.j2
     dest: "{{ playbook_dir }}/eksctl-cluster.yaml"
 
+# Create cluster via eksctl (idempotent)
 - name: Run eksctl to create EKS cluster
   command: eksctl create cluster -f "{{ playbook_dir }}/eksctl-cluster.yaml"
   register: eksctl_output
-  changed_when: "'created' in eksctl_output.stdout"
+  changed_when: >
+    ('will create' in (eksctl_output.stdout | default(''))) or
+    ('created' in (eksctl_output.stdout | default('')))
+  failed_when: >
+    (eksctl_output.rc != 0) and
+    ('already exists' not in (eksctl_output.stdout | default(''))) and
+    ('already exists' not in (eksctl_output.stderr | default('')))
 
-- name: Show eksctl output
+- name: Show eksctl output (last 4000 chars)
   debug:
-    var: eksctl_output.stdout
+    msg: "{{ (eksctl_output.stdout | default(''))[-4000:] }}"
